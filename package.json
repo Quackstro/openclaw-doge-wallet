@@ -1,0 +1,66 @@
+{
+  "name": "@quackstro/doge-wallet",
+  "version": "0.1.0",
+  "description": "Self-custodial Dogecoin wallet plugin for OpenClaw — hold, send, receive, and manage DOGE autonomously 🐕",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/index.*",
+    "dist/src/**",
+    "!dist/src/tests/**",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "dogecoin",
+    "doge",
+    "wallet",
+    "cryptocurrency",
+    "agent",
+    "a2a",
+    "payments"
+  ],
+  "author": "Quackstro LLC",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quackstro/openclaw-doge-wallet"
+  },
+  "homepage": "https://github.com/quackstro/openclaw-doge-wallet#readme",
+  "bugs": {
+    "url": "https://github.com/quackstro/openclaw-doge-wallet/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "async-mutex": "^0.5.0",
+    "bip39": "3.1.0",
+    "bitcore-lib-doge": "10.10.5",
+    "hdkey": "2.1.0"
+  },
+  "peerDependencies": {
+    "@sinclair/typebox": ">=0.32.0"
+  },
+  "peerDependenciesMeta": {
+    "@sinclair/typebox": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@sinclair/typebox": "^0.32.0",
+    "@types/node": "^25.2.0",
+    "typescript": "^5.9.3"
+  }
+}

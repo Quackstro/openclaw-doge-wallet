@@ -1,0 +1,168 @@
+{
+  "id": "doge-wallet",
+  "name": "DOGE Wallet",
+  "version": "0.1.0",
+  "description": "Dogecoin wallet for OpenClaw agents — much send, very crypto, wow 🐕",
+  "author": "Quackstro LLC",
+  "license": "MIT",
+  "kind": "service",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "network": {
+        "type": "string",
+        "enum": ["mainnet", "testnet"],
+        "default": "mainnet",
+        "description": "DOGE network to use"
+      },
+      "dataDir": {
+        "type": "string",
+        "default": "~/.openclaw/doge",
+        "description": "Directory for wallet data (keys, UTXOs, audit)"
+      },
+      "api": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "primary": {
+            "type": "string",
+            "enum": ["blockcypher", "sochain"],
+            "default": "blockcypher",
+            "description": "Primary API provider"
+          },
+          "fallback": {
+            "type": "string",
+            "enum": ["blockcypher", "sochain", "none"],
+            "default": "sochain",
+            "description": "Fallback API provider"
+          },
+          "blockcypher": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "baseUrl": {
+                "type": "string",
+                "default": "https://api.blockcypher.com/v1/doge/main"
+              },
+              "apiToken": {
+                "type": ["string", "null"],
+                "default": null,
+                "description": "BlockCypher API token (optional, increases rate limit)"
+              }
+            }
+          },
+          "sochain": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "baseUrl": {
+                "type": "string",
+                "default": "https://chain.so/api/v3"
+              },
+              "apiKey": {
+                "type": ["string", "null"],
+                "default": null,
+                "description": "SoChain v3 API key (REQUIRED - get one at https://chain.so/api)"
+              }
+            }
+          },
+          "priceApi": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": ["coingecko"],
+                "default": "coingecko"
+              },
+              "baseUrl": {
+                "type": "string",
+                "default": "https://api.coingecko.com/api/v3"
+              },
+              "cacheTtlSeconds": {
+                "type": "number",
+                "default": 300,
+                "description": "How long to cache price data (seconds)"
+              }
+            }
+          }
+        }
+      },
+      "policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "tiers": {
+            "type": "object",
+            "properties": {
+              "micro":  { "type": "object", "properties": { "maxAmount": { "type": "number" }, "approval": { "type": "string" } } },
+              "small":  { "type": "object", "properties": { "maxAmount": { "type": "number" }, "approval": { "type": "string" } } },
+              "medium": { "type": "object", "properties": { "maxAmount": { "type": "number" }, "approval": { "type": "string" }, "delayMinutes": { "type": "number" } } },
+              "large":  { "type": "object", "properties": { "maxAmount": { "type": "number" }, "approval": { "type": "string" } } },
+              "sweep":  { "type": "object", "properties": { "maxAmount": { "type": ["number", "null"] }, "approval": { "type": "string" } } }
+            }
+          },
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "dailyMax":          { "type": "number", "default": 5000 },
+              "hourlyMax":         { "type": "number", "default": 1000 },
+              "txCountDailyMax":   { "type": "number", "default": 50 },
+              "cooldownSeconds":   { "type": "number", "default": 10 }
+            }
+          },
+          "allowlist": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "denylist":  { "type": "array", "items": { "type": "string" }, "default": [] },
+          "freeze":    { "type": "boolean", "default": false }
+        }
+      },
+      "utxo": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "refreshIntervalSeconds":   { "type": "number", "default": 600 },
+          "dustThreshold":            { "type": "number", "default": 100000 },
+          "consolidationThreshold":   { "type": "number", "default": 50 },
+          "minConfirmations":         { "type": "number", "default": 1 }
+        }
+      },
+      "notifications": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled":                  { "type": "boolean", "default": true },
+          "channel":                  { "type": "string", "default": "telegram" },
+          "target":                   { "type": "string", "description": "Telegram chat ID for notifications" },
+          "lowBalanceAlert":          { "type": "number", "default": 100 },
+          "dailyLimitWarningPercent": { "type": "number", "default": 80 }
+        }
+      },
+      "fees": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "strategy":        { "type": "string", "enum": ["low", "medium", "high"], "default": "medium" },
+          "maxFeePerKb":     { "type": "number", "default": 200000000 },
+          "fallbackFeePerKb": { "type": "number", "default": 100000000 }
+        }
+      }
+    }
+  },
+  "uiHints": {
+    "api.blockcypher.apiToken": {
+      "label": "BlockCypher API Token",
+      "sensitive": true,
+      "placeholder": "your-blockcypher-token",
+      "help": "Optional — increases rate limit from 200 to 2000 req/hr"
+    },
+    "api.sochain.apiKey": {
+      "label": "SoChain API Key",
+      "sensitive": true,
+      "placeholder": "your-sochain-api-key",
+      "help": "REQUIRED for SoChain v3 — get key at https://chain.so/api (no free tier)"
+    }
+  }
+}

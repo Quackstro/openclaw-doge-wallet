@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build output (committed for npm, but regenerated)
+# dist/
+
+# Local wallet data (NEVER commit)
+*.jsonl
+keys/
+audit/
+utxo/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# npm
+*.tgz
