@@ -270,4 +270,14 @@ MIT — Built by [Quackstro LLC](https://quackstro.com)
 
 ---
 
+## Support the Project
+
+If you find this plugin useful, tips are always appreciated:
+
+**DOGE Address:** `D6i8TeepmrGztENxdME84d2x5UVjLWncat`
+
+Every DOGE goes toward hosting, continued development, and keeping the lights on. 🐕
+
+---
+
 *Much wallet. Very secure. Such DOGE. Wow.* 🐕
