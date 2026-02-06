@@ -128,9 +128,32 @@ export class AuditLog {
             initiatedBy: by === "owner" ? "owner" : "system",
         });
     }
+    /** Log a receive transaction */
+    async logReceive(txid, fromAddress, amountKoinu, confirmations) {
+        return this.logAudit({
+            action: "receive",
+            txid,
+            address: fromAddress,
+            amount: amountKoinu,
+            reason: `Received ${amountKoinu / 1e8} DOGE from ${fromAddress} (${confirmations} conf)`,
+            initiatedBy: "external",
+            metadata: { confirmations },
+        });
+    }
     /** Get recent send transactions for history display */
     async getSendHistory(limit = 20) {
         return this.getByAction("send", limit);
+    }
+    /** Get recent receive transactions */
+    async getReceiveHistory(limit = 20) {
+        return this.getByAction("receive", limit);
+    }
+    /** Get both sends and receives sorted by timestamp (newest first) */
+    async getFullHistory(limit = 20) {
+        const all = await this.getAuditLog(1000);
+        return all
+            .filter((e) => e.action === "send" || e.action === "receive")
+            .slice(0, limit);
     }
 }
 //# sourceMappingURL=audit.js.map
