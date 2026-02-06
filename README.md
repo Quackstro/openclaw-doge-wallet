@@ -264,6 +264,46 @@ If you suspect compromise:
 
 ---
 
+## Roadmap
+
+### ✅ Completed (v0.1.0)
+
+- [x] HD wallet with BIP-44 derivation
+- [x] AES-256-GCM encrypted keystore
+- [x] Multi-provider API failover (BlockCypher, SoChain, Blockchair)
+- [x] P2P transaction broadcasting
+- [x] Tiered spending policy with owner approval
+- [x] Telegram notifications + guided onboarding
+- [x] Agent-to-Agent invoice system with OP_RETURN verification
+- [x] UTXO management + consolidation recommendations
+- [x] Rate limiting + security hardening
+
+### 🚧 In Progress
+
+- [ ] **Local Node Support** — Connect to your own Dogecoin Core node (pruned or full) instead of third-party APIs. Eliminates rate limits, improves privacy, and adds reliability. [See plan →](docs/PLAN-local-node-support.md)
+
+### 📋 Planned
+
+- [ ] **Electrum Server Support** — Lighter alternative to full node (ElectrumX/Fulcrum)
+- [ ] **Multi-Address HD Rotation** — Fresh receive address per transaction for privacy
+- [ ] **Payment Channels** — Off-chain micro-transactions for high-frequency A2A payments
+- [ ] **QR Code Generation** — Display receive address as QR in Telegram
+- [ ] **Fiat On-Ramp Integration** — Buy DOGE directly through the wallet
+- [ ] **Hardware Wallet Support** — Sign transactions with Ledger/Trezor
+- [ ] **Multi-Wallet Mode** — Manage multiple wallets per agent
+
+### 💡 Considering
+
+- [ ] Stealth addresses for enhanced privacy
+- [ ] CoinJoin integration
+- [ ] Lightning-style atomic swaps (DOGE ↔ other chains)
+- [ ] Scheduled/recurring payments
+- [ ] Webhook callbacks for external integrations
+
+Have a feature request? Open an issue or drop a tip with a memo! 🐕
+
+---
+
 ## License
 
 MIT — Built by [Quackstro LLC](https://quackstro.com)
