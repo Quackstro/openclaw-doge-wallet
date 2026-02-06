@@ -156,6 +156,9 @@ export function signTransaction(
       isFullySigned: true,
     };
   } finally {
+    // SECURITY [H-1]: Zero private key buffer after signing
+    privateKey.fill(0);
+
     // Zero out the bitcore PrivateKey's internal BigNumber to minimize exposure
     // Note: bitcore uses BN.js internally - we clear the internal state
     if (privKey && privKey.bn) {

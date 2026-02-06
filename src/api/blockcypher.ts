@@ -73,9 +73,15 @@ export class BlockCypherProvider implements DogeApiProvider {
     return `76a914${pubKeyHash}88ac`;
   }
 
+  // SECURITY [H-4]: BlockCypher only supports token in URL query params — HTTPS enforced
+  // Risk: API token visible in server logs, browser history, and referrer headers.
+  // Mitigation: baseUrl is always https://, and this is a server-side call (no browser exposure).
   /** Append API token to URL if configured */
   private url(path: string, params?: Record<string, string>): string {
     const url = new URL(`${this.baseUrl}${path}`);
+    if (!url.protocol.startsWith('https')) {
+      throw new Error('BlockCypher API must use HTTPS');
+    }
     if (this.apiToken) {
       url.searchParams.set("token", this.apiToken);
     }

@@ -69,14 +69,19 @@ const DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000;
 export class ApprovalQueue {
   private readonly filePath: string;
   private readonly log: (level: "info" | "warn" | "error", msg: string) => void;
+  // SECURITY [H-3]: Verify caller identity before approval
+  private readonly ownerId: string;
 
   private pending: Map<string, PendingApproval> = new Map();
 
   constructor(
     dataDir: string,
+    ownerId?: string,
     log?: (level: "info" | "warn" | "error", msg: string) => void,
   ) {
     this.filePath = join(dataDir, "pending.json");
+    // SECURITY [H-3]: Fail-closed — if no ownerId configured, no caller can match
+    this.ownerId = ownerId ?? "<OWNER_NOT_CONFIGURED>";
     this.log = log ?? (() => {});
   }
 
@@ -150,7 +155,13 @@ export class ApprovalQueue {
    *
    * @returns The approved entry, or undefined if not found/already resolved
    */
-  approve(id: string, by: string = "owner"): PendingApproval | undefined {
+  // SECURITY [H-3]: Verify caller identity before approval
+  approve(id: string, by: string = "unknown"): PendingApproval | undefined {
+    // SECURITY [H-3]: Only the configured owner or system auto-approvals are allowed
+    if (by !== this.ownerId && by !== "system:auto") {
+      this.log("warn", `doge-wallet: approval ${id} rejected — unauthorized caller: ${by}`);
+      return undefined;
+    }
     const entry = this.pending.get(id);
     if (!entry || entry.status !== "pending") return undefined;
 
@@ -169,7 +180,13 @@ export class ApprovalQueue {
    *
    * @returns The denied entry, or undefined if not found/already resolved
    */
-  deny(id: string, by: string = "owner"): PendingApproval | undefined {
+  // SECURITY [H-3]: Verify caller identity before approval
+  deny(id: string, by: string = "unknown"): PendingApproval | undefined {
+    // SECURITY [H-3]: Only the configured owner or system auto-approvals are allowed
+    if (by !== this.ownerId && by !== "system:auto") {
+      this.log("warn", `doge-wallet: denial ${id} rejected — unauthorized caller: ${by}`);
+      return undefined;
+    }
     const entry = this.pending.get(id);
     if (!entry || entry.status !== "pending") return undefined;
 

@@ -21,9 +21,13 @@ const DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000;
 export class ApprovalQueue {
     filePath;
     log;
+    // SECURITY [H-3]: Verify caller identity before approval
+    ownerId;
     pending = new Map();
-    constructor(dataDir, log) {
+    constructor(dataDir, ownerId, log) {
         this.filePath = join(dataDir, "pending.json");
+        // SECURITY [H-3]: Fail-closed — if no ownerId configured, no caller can match
+        this.ownerId = ownerId ?? "<OWNER_NOT_CONFIGURED>";
         this.log = log ?? (() => { });
     }
     // --------------------------------------------------------------------------
@@ -79,7 +83,13 @@ export class ApprovalQueue {
      *
      * @returns The approved entry, or undefined if not found/already resolved
      */
-    approve(id, by = "owner") {
+    // SECURITY [H-3]: Verify caller identity before approval
+    approve(id, by = "unknown") {
+        // SECURITY [H-3]: Only the configured owner or system auto-approvals are allowed
+        if (by !== this.ownerId && by !== "system:auto") {
+            this.log("warn", `doge-wallet: approval ${id} rejected — unauthorized caller: ${by}`);
+            return undefined;
+        }
         const entry = this.pending.get(id);
         if (!entry || entry.status !== "pending")
             return undefined;
@@ -95,7 +105,13 @@ export class ApprovalQueue {
      *
      * @returns The denied entry, or undefined if not found/already resolved
      */
-    deny(id, by = "owner") {
+    // SECURITY [H-3]: Verify caller identity before approval
+    deny(id, by = "unknown") {
+        // SECURITY [H-3]: Only the configured owner or system auto-approvals are allowed
+        if (by !== this.ownerId && by !== "system:auto") {
+            this.log("warn", `doge-wallet: denial ${id} rejected — unauthorized caller: ${by}`);
+            return undefined;
+        }
         const entry = this.pending.get(id);
         if (!entry || entry.status !== "pending")
             return undefined;

@@ -164,7 +164,7 @@ const dogeWalletPlugin = {
 
     const resolvedDataDir =
       api.resolvePath?.(cfg.dataDir) ??
-      cfg.dataDir.replace("~", process.env.HOME ?? "/home/clawdbot");
+      cfg.dataDir.replace("~", process.env.HOME ?? "/home/user");
 
     // Ensure data directory tree exists with secure permissions (700/600)
     // This runs on every startup to harden permissions even on existing installs
@@ -428,7 +428,15 @@ const dogeWalletPlugin = {
 
     const limitTracker = new LimitTracker(resolvedDataDir, cfg.policy.limits, log);
     const policyEngine = new PolicyEngine(cfg.policy, limitTracker);
-    const approvalQueue = new ApprovalQueue(resolvedDataDir, log);
+    // SECURITY [H-3]: Pass ownerId from runtime config (notifications.target)
+    // Never hardcode user IDs — this is an open source project
+    // SECURITY [H-3]: ownerId MUST come from runtime config — never hardcode user IDs
+    // If not configured, approvals will require explicit configuration before working
+    const approvalOwnerId = cfg.notifications.target || "<OWNER_ID_NOT_CONFIGURED>";
+    if (!cfg.notifications.target) {
+      log("warn", "doge-wallet: notifications.target not set — approval auth will reject all callers until configured");
+    }
+    const approvalQueue = new ApprovalQueue(resolvedDataDir, approvalOwnerId, log);
 
     // Freeze state persistence
     const freezeFilePath = `${resolvedDataDir}/freeze.json`;
@@ -900,6 +908,7 @@ const dogeWalletPlugin = {
       acceptsArgs: true,
       handler: async (ctx: any) => {
         const idPrefix = ctx.args?.trim() ?? "";
+        const callerId = ctx.chatId ?? ctx.chat?.id?.toString() ?? "unknown";
         if (!idPrefix) {
           return { text: "🐕 Usage: /approve <id>\nSee /wallet pending for pending approvals." };
         }
@@ -911,12 +920,13 @@ const dogeWalletPlugin = {
           return { text: `🐕 No pending approval matching "${idPrefix}". See /wallet pending.` };
         }
 
-        const approved = approvalQueue.approve(match.id, "owner");
+        // SECURITY [H-3]: Pass actual caller identity for verification
+        const approved = approvalQueue.approve(match.id, callerId);
         if (!approved) {
-          return { text: "🐕 Approval already resolved or expired." };
+          return { text: "🐕 Approval denied — unauthorized or already resolved." };
         }
 
-        await auditLog.logApproval(match.id, true, "owner", match.amount, match.to);
+        await auditLog.logApproval(match.id, true, callerId, match.amount, match.to);
 
         try {
           const result = await executeSend(match.to, match.amountDoge, match.reason, match.tier);
@@ -953,6 +963,7 @@ const dogeWalletPlugin = {
       acceptsArgs: true,
       handler: async (ctx: any) => {
         const idPrefix = ctx.args?.trim() ?? "";
+        const callerId = ctx.chatId ?? ctx.chat?.id?.toString() ?? "unknown";
         if (!idPrefix) {
           return { text: "🐕 Usage: /deny <id>\nSee /wallet pending for pending approvals." };
         }
@@ -964,12 +975,13 @@ const dogeWalletPlugin = {
           return { text: `🐕 No pending approval matching "${idPrefix}". See /wallet pending.` };
         }
 
-        const denied = approvalQueue.deny(match.id, "owner");
+        // SECURITY [H-3]: Pass actual caller identity for verification
+        const denied = approvalQueue.deny(match.id, callerId);
         if (!denied) {
-          return { text: "🐕 Approval already resolved or expired." };
+          return { text: "🐕 Denial rejected — unauthorized or already resolved." };
         }
 
-        await auditLog.logApproval(match.id, false, "owner", match.amount, match.to);
+        await auditLog.logApproval(match.id, false, callerId, match.amount, match.to);
 
         return {
           text:
@@ -992,6 +1004,7 @@ const dogeWalletPlugin = {
       handler: async (ctx: any) => {
         const args = ctx.args?.trim() ?? "";
         const chatId = ctx.chatId ?? ctx.chat?.id ?? "unknown";
+        const messageId = ctx.messageId ?? ctx.message?.message_id?.toString();
 
         // Check if wallet is initialized
         const initialized = await walletManager.isInitialized();
@@ -1012,16 +1025,28 @@ const dogeWalletPlugin = {
 
         switch (subCmd) {
           case "init":      return await handleWalletInit(subArgs);
-          case "recover":   return await handleWalletRecover(subArgs);
+          case "recover": {
+            // SECURITY: Auto-delete message that may contain mnemonic
+            if (messageId) deleteUserMessage(chatId, messageId, log).catch(() => {});
+            return await handleWalletRecover(subArgs);
+          }
           case "address":   return await handleWalletAddress();
           case "lock":      return handleWalletLock();
-          case "unlock":    return await handleWalletUnlock(subArgs);
+          case "unlock": {
+            // SECURITY: Auto-delete message containing passphrase
+            if (messageId) deleteUserMessage(chatId, messageId, log).catch(() => {});
+            return await handleWalletUnlock(subArgs);
+          }
           case "utxos":     return await handleWalletUtxos();
           case "pending":   return handleWalletPending();
           case "history":   return await handleWalletHistory();
           case "freeze":    return await handleWalletFreeze();
           case "unfreeze":  return await handleWalletUnfreeze();
-          case "export":    return await handleWalletExport(subArgs);
+          case "export": {
+            // SECURITY: Auto-delete message that may contain passphrase
+            if (messageId) deleteUserMessage(chatId, messageId, log).catch(() => {});
+            return await handleWalletExport(subArgs);
+          }
           case "invoice":   return await handleWalletInvoice(subArgs);
           case "invoices":  return await handleWalletInvoices();
           case "help":      return handleWalletHelp();
@@ -1072,6 +1097,23 @@ const dogeWalletPlugin = {
 
         if (!flowResult) {
           return { text: "Unknown action." };
+        }
+
+        // SECURITY: Auto-delete the bot's mnemonic message when user confirms backup.
+        // On Telegram callback queries, ctx.message.message_id is the message containing
+        // the inline button — which is the mnemonic display message itself.
+        if (flowResult.deleteBotMessageId) {
+          deleteUserMessage(chatId, flowResult.deleteBotMessageId, log).catch(() => {
+            log("warn", "doge-wallet: failed to auto-delete mnemonic message — user should delete manually");
+          });
+        } else if (callbackData === "doge:onboard:phrase_saved") {
+          // Fallback: delete the message that contained the "I've Written It Down" button
+          const btnMsgId = ctx.message?.message_id?.toString();
+          if (btnMsgId) {
+            deleteUserMessage(chatId, btnMsgId, log).catch(() => {
+              log("warn", "doge-wallet: failed to auto-delete mnemonic message — user should delete manually");
+            });
+          }
         }
 
         return formatOnboardingResult(flowResult);

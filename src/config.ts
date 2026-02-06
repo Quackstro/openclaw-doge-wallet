@@ -58,7 +58,7 @@ const DEFAULTS: DogeWalletConfig = {
   notifications: {
     enabled: true,
     channel: "telegram",
-    target: "8511108690",
+    target: "<YOUR_TELEGRAM_CHAT_ID>",
     lowBalanceAlert: 100,
     lowBalanceAlertIntervalHours: 24,
     dailyLimitWarningPercent: 80,
@@ -143,7 +143,7 @@ export function parseDogeConfig(raw: unknown): DogeWalletConfig {
 export function isWalletInitialized(config: DogeWalletConfig): boolean {
   const fs = require("node:fs");
   const path = require("node:path");
-  const resolvedDir = config.dataDir.replace("~", process.env.HOME ?? "/home/clawdbot");
+  const resolvedDir = config.dataDir.replace("~", process.env.HOME ?? "/home/user");
   const keystorePath = path.join(resolvedDir, "keys", "wallet.json");
   try {
     fs.accessSync(keystorePath);
