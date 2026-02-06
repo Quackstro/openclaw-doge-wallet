@@ -1297,14 +1297,7 @@ const dogeWalletPlugin = {
 
       const address = await walletManager.getAddress();
 
-      return {
-        text:
-          "🐕 DOGE Receiving Address\n━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-          `📍 ${address}\n` +
-          `🌐 Network: ${cfg.network}\n\n` +
-          `dogecoin:${address}\n\n` +
-          "Share this to receive DOGE. Much receive. Wow. 🐕",
-      };
+      return { text: address };
     }
 
     function handleWalletLock() {

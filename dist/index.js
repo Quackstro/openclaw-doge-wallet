@@ -287,6 +287,28 @@ const dogeWalletPlugin = {
         notifier.setSendMessage(sendNotification);
         notifier.setSendRichMessage(sendRichNotification);
         // ------------------------------------------------------------------
+        // Helper: Unlock UTXOs locked for a failed/unverified transaction
+        // ------------------------------------------------------------------
+        async function unlockUtxosForTx(txid) {
+            const utxos = utxoManager.getUtxos();
+            let unlockCount = 0;
+            for (const utxo of utxos) {
+                if (utxo.locked && utxo.lockedFor === txid) {
+                    const ok = await utxoManager.unlockUtxo(utxo.txid, utxo.vout);
+                    if (ok) {
+                        unlockCount++;
+                        log("info", `doge-wallet: unlocked UTXO ${utxo.txid}:${utxo.vout} ` +
+                            `(${koinuToDoge(utxo.amount)} DOGE) — locked for failed/unverified tx ${txid}`);
+                    }
+                }
+            }
+            if (unlockCount > 0) {
+                const balance = utxoManager.getBalance();
+                log("info", `doge-wallet: unlocked ${unlockCount} UTXO(s) for tx ${txid} — ` +
+                    `balance now ${koinuToDoge(balance.confirmed)} DOGE`);
+            }
+        }
+        // ------------------------------------------------------------------
         // Transaction Tracker
         // ------------------------------------------------------------------
         const txTracker = new TransactionTracker(resolvedDataDir, provider, {
@@ -308,10 +330,18 @@ const dogeWalletPlugin = {
             onFailed: (txid, reason) => {
                 notifier.notifyError(`❌ TX ${txid.slice(0, 12)}… not found on network — transaction may have failed. ${reason}`).catch(() => { });
                 log("warn", `doge-wallet: ❌ tx ${txid} failed: ${reason}`);
+                // Unlock any UTXOs that were locked for this failed transaction
+                unlockUtxosForTx(txid).catch((err) => {
+                    log("error", `doge-wallet: failed to unlock UTXOs for failed tx ${txid}: ${err}`);
+                });
             },
             onUnverified: (txid, reason) => {
                 notifier.notifyError(`⚠️ Unable to verify TX ${txid.slice(0, 12)}… — APIs are degraded. Transaction may still be valid. ${reason}`).catch(() => { });
                 log("warn", `doge-wallet: ⚠️ tx ${txid} unverified (API degradation): ${reason}`);
+                // Unlock any UTXOs that were locked for this unverified transaction
+                unlockUtxosForTx(txid).catch((err) => {
+                    log("error", `doge-wallet: failed to unlock UTXOs for unverified tx ${txid}: ${err}`);
+                });
             },
         }, log);
         const limitTracker = new LimitTracker(resolvedDataDir, cfg.policy.limits, log);
@@ -1051,13 +1081,7 @@ const dogeWalletPlugin = {
                 return { text: "🐕 No wallet configured. Run /wallet init first." };
             }
             const address = await walletManager.getAddress();
-            return {
-                text: "🐕 DOGE Receiving Address\n━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-                    `📍 ${address}\n` +
-                    `🌐 Network: ${cfg.network}\n\n` +
-                    `dogecoin:${address}\n\n` +
-                    "Share this to receive DOGE. Much receive. Wow. 🐕",
-            };
+            return { text: address };
         }
         function handleWalletLock() {
             if (!walletManager.isUnlocked()) {
