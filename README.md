@@ -4,6 +4,8 @@ A self-custodial Dogecoin wallet that gives OpenClaw agents the ability to hold,
 
 **Much crypto. Very plugin. Wow.**
 
+![Wallet Dashboard](docs/images/wallet-dashboard.jpg)
+
 ---
 
 ## Install
