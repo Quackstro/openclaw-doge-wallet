@@ -75,6 +75,18 @@ export class PaymentVerifier {
   ): Promise<VerificationResult> {
     const { txid, invoiceId } = notification;
 
+    // SECURITY [M-3]: Reject verification for already-settled invoices
+    if (invoice.status === "paid") {
+      return {
+        valid: false,
+        confirmations: 0,
+        amountReceived: 0,
+        amountExpected: dogeToKoinu(invoice.payment.amount),
+        opReturnMatch: false,
+        reason: `Invoice ${invoice.invoiceId} is already paid — rejecting duplicate verification`,
+      };
+    }
+
     // Sanity check: invoice ID must match
     if (invoiceId !== invoice.invoiceId) {
       return {

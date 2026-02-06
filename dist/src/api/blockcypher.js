@@ -64,9 +64,15 @@ export class BlockCypherProvider {
         // Build P2PKH script: OP_DUP(76) OP_HASH160(a9) PUSH_20(14) <pubKeyHash> OP_EQUALVERIFY(88) OP_CHECKSIG(ac)
         return `76a914${pubKeyHash}88ac`;
     }
+    // SECURITY [H-4]: BlockCypher only supports token in URL query params — HTTPS enforced
+    // Risk: API token visible in server logs, browser history, and referrer headers.
+    // Mitigation: baseUrl is always https://, and this is a server-side call (no browser exposure).
     /** Append API token to URL if configured */
     url(path, params) {
         const url = new URL(`${this.baseUrl}${path}`);
+        if (!url.protocol.startsWith('https')) {
+            throw new Error('BlockCypher API must use HTTPS');
+        }
         if (this.apiToken) {
             url.searchParams.set("token", this.apiToken);
         }

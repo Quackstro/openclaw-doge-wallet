@@ -27,6 +27,8 @@ export class OnboardingFlow {
     log;
     // Temporary passphrase storage (in-memory only, with expiration)
     tempPassphrases = new Map();
+    // SECURITY: Track bot message IDs containing mnemonic for auto-deletion
+    mnemonicMessageIds = new Map();
     // Cleanup interval handle
     cleanupInterval = null;
     constructor(config) {
@@ -38,6 +40,21 @@ export class OnboardingFlow {
         this.cleanupInterval = setInterval(() => {
             this.cleanupExpiredPassphrases();
         }, 60_000); // Every minute
+    }
+    /**
+     * SECURITY: Track a bot message containing the mnemonic for later auto-deletion.
+     */
+    trackMnemonicMessage(chatId, messageId) {
+        this.mnemonicMessageIds.set(chatId, messageId);
+    }
+    /**
+     * SECURITY: Retrieve and clear the tracked mnemonic message ID.
+     */
+    popMnemonicMessageId(chatId) {
+        const id = this.mnemonicMessageIds.get(chatId);
+        if (id)
+            this.mnemonicMessageIds.delete(chatId);
+        return id;
     }
     /**
      * Set a temporary passphrase with expiration.
@@ -75,6 +92,8 @@ export class OnboardingFlow {
         for (const [chatId, entry] of this.tempPassphrases) {
             if (now > entry.expiresAt) {
                 this.tempPassphrases.delete(chatId);
+                // SECURITY: Also clean up tracked mnemonic messages for abandoned flows
+                this.mnemonicMessageIds.delete(chatId);
             }
         }
     }
@@ -308,6 +327,10 @@ export class OnboardingFlow {
         // Initialize wallet and get mnemonic
         try {
             const initResult = await this.walletManager.init(passphrase);
+            // SECURITY [H-2]: Clear passphrase from memory after use
+            // Note: JS strings are immutable and cannot be truly zeroed from V8 heap,
+            // but we delete all references ASAP to minimize exposure window.
+            this.deleteTempPassphrase(chatId);
             // Store mnemonic temporarily for verification (encrypted at rest)
             if (passphraseHash) {
                 await this.stateManager.setTempMnemonic(chatId, initResult.mnemonic, passphraseHash);
@@ -320,6 +343,8 @@ export class OnboardingFlow {
             result.text = (result.text || '') + '✅ Passphrase secured!\n\n' + text;
             result.keyboard = keyboard;
             result.parseMode = 'Markdown';
+            // SECURITY: Track this message so we can auto-delete it after user confirms backup
+            result.trackBotMessageForDeletion = true;
             return result;
         }
         catch (err) {
@@ -339,12 +364,14 @@ export class OnboardingFlow {
      * Handle "I've Written It Down" button.
      */
     async handlePhraseSaved(chatId) {
+        // SECURITY: Auto-delete the bot message containing the mnemonic
+        const mnemonicMsgId = this.popMnemonicMessageId(chatId);
         // Pick verification words
         const indices = pickVerificationIndices();
         await this.stateManager.setVerificationWords(chatId, indices);
         await this.stateManager.transitionTo(chatId, OnboardingState.VERIFICATION_PENDING);
         const text = verificationPromptMessage(indices);
-        return { text };
+        return { text, deleteBotMessageId: mnemonicMsgId };
     }
     /**
      * Handle "Show Phrase Again" button.

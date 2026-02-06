@@ -44,7 +44,7 @@ interface ReceiveState {
 // Constants
 // ============================================================================
 
-const DEFAULT_POLL_INTERVAL_MS = 600_000; // 10 minutes (conserve API quota)
+const DEFAULT_POLL_INTERVAL_MS = 30_000; // 30 seconds (~17% of free-tier BlockCypher quota)
 const MAX_SEEN_TXIDS = 500; // Prevent unbounded growth
 
 // ============================================================================

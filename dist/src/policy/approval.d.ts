@@ -43,8 +43,9 @@ export interface PendingApproval {
 export declare class ApprovalQueue {
     private readonly filePath;
     private readonly log;
+    private readonly ownerId;
     private pending;
-    constructor(dataDir: string, log?: (level: "info" | "warn" | "error", msg: string) => void);
+    constructor(dataDir: string, ownerId?: string, log?: (level: "info" | "warn" | "error", msg: string) => void);
     /**
      * Queue a send request for approval.
      *

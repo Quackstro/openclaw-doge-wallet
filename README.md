@@ -32,6 +32,7 @@ sudo supervisorctl restart openclaw
 - **Spending Policy** — Tiered auto-approval, rate limits, daily caps, address allowlist/denylist
 - **Agent-to-Agent Payments** — Invoice system with OP_RETURN verification for AI-to-AI transactions
 - **Notifications** — Telegram alerts for sends, receives, approvals, low balance
+- **Receive Monitor** — Polls for incoming transactions every 30 seconds (configurable, ~17% of free-tier BlockCypher quota)
 - **Guided Onboarding** — Step-by-step wallet setup with backup verification via Telegram
 - **Security Hardened** — Rate limiting, input sanitization, preflight checks, mnemonic never stored in session history
 

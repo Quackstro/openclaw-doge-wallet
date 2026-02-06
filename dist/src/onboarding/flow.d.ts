@@ -19,6 +19,10 @@ export interface FlowResult {
     keyboard?: InlineKeyboard;
     parseMode?: 'Markdown' | 'HTML';
     deleteMessageId?: string;
+    /** SECURITY: Track this bot response message ID for later deletion (e.g., mnemonic display) */
+    trackBotMessageForDeletion?: boolean;
+    /** SECURITY: Delete a previously tracked bot message by chat ID */
+    deleteBotMessageId?: string;
 }
 export declare class OnboardingFlow {
     private readonly stateManager;
@@ -26,8 +30,17 @@ export declare class OnboardingFlow {
     private readonly dataDir;
     private readonly log;
     private tempPassphrases;
+    private mnemonicMessageIds;
     private cleanupInterval;
     constructor(config: OnboardingFlowConfig);
+    /**
+     * SECURITY: Track a bot message containing the mnemonic for later auto-deletion.
+     */
+    trackMnemonicMessage(chatId: string, messageId: string): void;
+    /**
+     * SECURITY: Retrieve and clear the tracked mnemonic message ID.
+     */
+    private popMnemonicMessageId;
     /**
      * Set a temporary passphrase with expiration.
      */
