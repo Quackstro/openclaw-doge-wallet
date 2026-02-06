@@ -10,11 +10,28 @@ A self-custodial Dogecoin wallet that gives OpenClaw agents the ability to hold,
 
 ## Install
 
+### Option A: From npm (recommended)
+
 ```bash
 openclaw plugins install @quackstro/doge-wallet
 ```
 
-Then restart the gateway:
+### Option B: From source
+
+```bash
+# Clone the repository
+git clone https://github.com/Quackstro/openclaw-doge-wallet.git
+
+# Move into the OpenClaw extensions directory
+mv openclaw-doge-wallet ~/.openclaw/extensions/doge-wallet
+
+# Install dependencies and build
+cd ~/.openclaw/extensions/doge-wallet
+pnpm install
+pnpm build
+```
+
+### Restart the gateway
 
 ```bash
 sudo supervisorctl restart openclaw
