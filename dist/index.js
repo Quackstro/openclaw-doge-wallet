@@ -586,262 +586,240 @@ const dogeWalletPlugin = {
             };
         }
         // ------------------------------------------------------------------
-        // Command: /balance — Check wallet balance
+        // Subcommand handler: balance
         // ------------------------------------------------------------------
-        api.registerCommand({
-            name: "balance",
-            description: "🐕 Show DOGE wallet balance — such info, very numbers",
-            handler: async () => {
-                const balanceInfo = await getBalanceInfo();
-                if (!balanceInfo) {
-                    return {
-                        text: "🐕 DOGE Wallet\n" +
-                            "━━━━━━━━━━━━━━━━\n" +
-                            "No wallet configured.\n" +
-                            "Run /wallet init <passphrase> to get started.\n" +
-                            "Such empty. Much potential. Wow.",
-                    };
-                }
-                // Trigger a refresh if never refreshed
-                if (utxoManager.getUtxos().length === 0 && !utxoManager.getLastRefreshed()) {
-                    try {
-                        await doUtxoRefresh();
-                        const updated = await getBalanceInfo();
-                        if (updated)
-                            Object.assign(balanceInfo, updated);
-                    }
-                    catch { /* continue with stale data */ }
-                }
-                const unlocked = walletManager.isUnlocked();
-                const lockStatus = unlocked ? "🔓 Unlocked" : "🔒 Locked";
-                const frozen = policyEngine.isFrozen();
-                const dailySpent = koinuToDoge(limitTracker.getDailySpent());
-                const dailyMax = cfg.policy.limits.dailyMax;
-                const lastRefreshed = balanceInfo.lastRefreshed
-                    ? formatET(balanceInfo.lastRefreshed)
-                    : "never";
-                let text = "🐕 DOGE Wallet Balance\n" +
-                    "━━━━━━━━━━━━━━━━━━━━\n" +
-                    `💰 Confirmed: ${formatDogeUsd(balanceInfo.confirmed, priceService.dogeToUsd(balanceInfo.confirmed))}\n`;
-                if (balanceInfo.unconfirmed > 0) {
-                    text += `⏳ Pending: +${formatDogeUsd(balanceInfo.unconfirmed, priceService.dogeToUsd(balanceInfo.unconfirmed))}\n`;
-                }
-                text +=
-                    `📊 UTXOs: ${balanceInfo.utxoCount}\n` +
-                        `📤 Daily: ${formatDoge(dailySpent)} / ${formatDoge(dailyMax)} DOGE\n` +
-                        `${lockStatus}${frozen ? " 🧊 FROZEN" : ""}\n` +
-                        `📍 ${balanceInfo.address}\n` +
-                        `🔄 Refreshed: ${lastRefreshed}\n` +
-                        "\nMuch balance. Very DOGE. Wow. 🐕";
-                return { text };
-            },
-        });
-        // ------------------------------------------------------------------
-        // Command: /send — Send DOGE to an address
-        // ------------------------------------------------------------------
-        api.registerCommand({
-            name: "send",
-            description: "🐕 Send DOGE — /send <amount> to <address>",
-            acceptsArgs: true,
-            handler: async (ctx) => {
-                const args = ctx.args?.trim() ?? "";
-                if (!args) {
-                    return {
-                        text: "🐕 Send DOGE\n" +
-                            "━━━━━━━━━━━━\n" +
-                            "Usage: /send <amount> to <address>\n" +
-                            "  /send 50 DOGE to DReci…pient\n" +
-                            "  /send DReci…pient 50",
-                    };
-                }
-                // Parse: "<amount> [DOGE] [to] <address>" or "<address> <amount> [DOGE]"
-                let amountDoge = null;
-                let toAddress = null;
-                const match1 = args.match(/^([\d.]+)\s*(?:DOGE\s+)?(?:to\s+)?([A-Za-z1-9]{25,45})$/i);
-                const match2 = args.match(/^([A-Za-z1-9]{25,45})\s+([\d.]+)\s*(?:DOGE)?$/i);
-                if (match1) {
-                    amountDoge = parseFloat(match1[1]);
-                    toAddress = match1[2];
-                }
-                else if (match2) {
-                    toAddress = match2[1];
-                    amountDoge = parseFloat(match2[2]);
-                }
-                if (!amountDoge || !toAddress || isNaN(amountDoge) || amountDoge <= 0) {
-                    return {
-                        text: "🐕 Send DOGE\n" +
-                            "━━━━━━━━━━━━\n" +
-                            "⚠️ Could not parse amount and address.\n" +
-                            "Usage: /send <amount> to <address>",
-                    };
-                }
-                if (!isValidAddress(toAddress, cfg.network)) {
-                    return {
-                        text: `🐕 ⚠️ Invalid ${cfg.network} address: ${toAddress}\nDouble-check and try again.`,
-                    };
-                }
-                const initialized = await walletManager.isInitialized();
-                if (!initialized) {
-                    return { text: "🐕 No wallet configured. Run /wallet init first." };
-                }
-                if (!walletManager.isUnlocked()) {
-                    return { text: "🐕 🔒 Wallet is locked. Run /wallet unlock <passphrase> first." };
-                }
-                // Evaluate spending policy
-                const evaluation = policyEngine.evaluate(amountDoge, toAddress, "Manual send via /send command");
-                await auditLog.logPolicyCheck(dogeToKoinu(amountDoge), evaluation.tier, evaluation.action, evaluation.reason);
-                if (evaluation.action === "deny") {
-                    // Notify on policy block
-                    notifier.notifyPolicyBlock(evaluation.reason ?? "Unknown reason").catch(() => { });
-                    return {
-                        text: "🐕 Send DENIED\n" +
-                            "━━━━━━━━━━━━━━\n" +
-                            `❌ ${evaluation.reason}\n` +
-                            `Tier: ${evaluation.tier} | ${formatDogeUsd(amountDoge, priceService.dogeToUsd(amountDoge))}`,
-                    };
-                }
-                // Auto-approved tiers: execute immediately
-                if (evaluation.allowed) {
-                    try {
-                        const result = await executeSend(toAddress, amountDoge, "Manual send via /send command", evaluation.tier);
-                        return {
-                            text: "🐕 Sending DOGE…\n" +
-                                "━━━━━━━━━━━━━━━━\n" +
-                                `📤 To: ${truncAddr(toAddress)}\n` +
-                                `💰 Amount: ${formatDogeUsd(amountDoge, priceService.dogeToUsd(amountDoge))}\n` +
-                                `⛽ Fee: ${formatDoge(result.feeDoge)} DOGE\n` +
-                                `📝 Tier: ${evaluation.tier}\n\n` +
-                                `✅ Transaction broadcast!\n` +
-                                `🔗 TX: ${result.txid}\n` +
-                                `⏱️ Est. confirm: ~1 min\n\n` +
-                                "Much send. Very crypto. Wow. 🐕",
-                        };
-                    }
-                    catch (err) {
-                        const errMsg = err instanceof Error ? err.message : String(err);
-                        return {
-                            text: `🐕 Send FAILED\n━━━━━━━━━━━━━━\n❌ ${errMsg}\n\nMuch error. Very sad. 🐕`,
-                        };
-                    }
-                }
-                // Needs approval: queue and notify
-                const pending = approvalQueue.queueForApproval({
-                    to: toAddress,
-                    amount: dogeToKoinu(amountDoge),
-                    amountDoge,
-                    reason: "Manual send via /send command",
-                    tier: evaluation.tier,
-                    action: evaluation.action,
-                    delayMinutes: evaluation.delayMinutes,
-                });
-                // Notify about the approval needed
-                notifier.notifyApprovalNeeded({
-                    id: pending.id,
-                    amountDoge,
-                    to: toAddress,
-                    tier: evaluation.tier,
-                    reason: "Manual send via /send command",
-                    usdValue: priceService.dogeToUsd(amountDoge),
-                }).catch(() => { });
-                const shortId = pending.id.slice(0, 8);
-                let text = "🐕 Approval Required\n" +
-                    "━━━━━━━━━━━━━━━━━━━━\n" +
-                    `📤 To: ${truncAddr(toAddress)}\n` +
-                    `💰 Amount: ${formatDogeUsd(amountDoge, priceService.dogeToUsd(amountDoge))}\n` +
-                    `📝 Tier: ${evaluation.tier}\n` +
-                    `🆔 ID: ${shortId}…\n\n`;
-                if (evaluation.action === "delay") {
-                    text +=
-                        `⏰ Auto-approves in ${evaluation.delayMinutes ?? 5} min unless denied.\n` +
-                            `Use /deny ${shortId} to cancel.\n`;
-                }
-                else {
-                    text += `Use /approve ${shortId} or /deny ${shortId}.\n`;
-                }
-                text += `\n${evaluation.reason ?? ""}`;
-                return { text };
-            },
-        });
-        // ------------------------------------------------------------------
-        // Command: /approve <pendingId>
-        // ------------------------------------------------------------------
-        api.registerCommand({
-            name: "approve",
-            description: "🐕 Approve a pending DOGE send — /approve <id>",
-            acceptsArgs: true,
-            handler: async (ctx) => {
-                const idPrefix = ctx.args?.trim() ?? "";
-                const callerId = ctx.chatId ?? ctx.chat?.id?.toString() ?? "unknown";
-                if (!idPrefix) {
-                    return { text: "🐕 Usage: /approve <id>\nSee /wallet pending for pending approvals." };
-                }
-                const allPending = approvalQueue.getPending();
-                const match = allPending.find((p) => p.id.startsWith(idPrefix));
-                if (!match) {
-                    return { text: `🐕 No pending approval matching "${idPrefix}". See /wallet pending.` };
-                }
-                // SECURITY [H-3]: Pass actual caller identity for verification
-                const approved = approvalQueue.approve(match.id, callerId);
-                if (!approved) {
-                    return { text: "🐕 Approval denied — unauthorized or already resolved." };
-                }
-                await auditLog.logApproval(match.id, true, callerId, match.amount, match.to);
+        async function handleWalletBalance() {
+            const balanceInfo = await getBalanceInfo();
+            if (!balanceInfo) {
+                return {
+                    text: "🐕 DOGE Wallet\n" +
+                        "━━━━━━━━━━━━━━━━\n" +
+                        "No wallet configured.\n" +
+                        "Run /wallet init <passphrase> to get started.\n" +
+                        "Such empty. Much potential. Wow.",
+                };
+            }
+            // Trigger a refresh if never refreshed
+            if (utxoManager.getUtxos().length === 0 && !utxoManager.getLastRefreshed()) {
                 try {
-                    const result = await executeSend(match.to, match.amountDoge, match.reason, match.tier);
-                    approvalQueue.markExecuted(match.id);
+                    await doUtxoRefresh();
+                    const updated = await getBalanceInfo();
+                    if (updated)
+                        Object.assign(balanceInfo, updated);
+                }
+                catch { /* continue with stale data */ }
+            }
+            const unlocked = walletManager.isUnlocked();
+            const lockStatus = unlocked ? "🔓 Unlocked" : "🔒 Locked";
+            const frozen = policyEngine.isFrozen();
+            const dailySpent = koinuToDoge(limitTracker.getDailySpent());
+            const dailyMax = cfg.policy.limits.dailyMax;
+            const lastRefreshed = balanceInfo.lastRefreshed
+                ? formatET(balanceInfo.lastRefreshed)
+                : "never";
+            let text = "🐕 DOGE Wallet Balance\n" +
+                "━━━━━━━━━━━━━━━━━━━━\n" +
+                `💰 Confirmed: ${formatDogeUsd(balanceInfo.confirmed, priceService.dogeToUsd(balanceInfo.confirmed))}\n`;
+            if (balanceInfo.unconfirmed > 0) {
+                text += `⏳ Pending: +${formatDogeUsd(balanceInfo.unconfirmed, priceService.dogeToUsd(balanceInfo.unconfirmed))}\n`;
+            }
+            text +=
+                `📊 UTXOs: ${balanceInfo.utxoCount}\n` +
+                    `📤 Daily: ${formatDoge(dailySpent)} / ${formatDoge(dailyMax)} DOGE\n` +
+                    `${lockStatus}${frozen ? " 🧊 FROZEN" : ""}\n` +
+                    `📍 ${balanceInfo.address}\n` +
+                    `🔄 Refreshed: ${lastRefreshed}\n` +
+                    "\nMuch balance. Very DOGE. Wow. 🐕";
+            return { text };
+        }
+        // ------------------------------------------------------------------
+        // Subcommand handler: send
+        // ------------------------------------------------------------------
+        async function handleWalletSend(args) {
+            if (!args) {
+                return {
+                    text: "🐕 Send DOGE\n" +
+                        "━━━━━━━━━━━━\n" +
+                        "Usage: /wallet send <amount> to <address>\n" +
+                        "  /wallet send 50 DOGE to DReci…pient\n" +
+                        "  /wallet send DReci…pient 50",
+                };
+            }
+            // Parse: "<amount> [DOGE] [to] <address>" or "<address> <amount> [DOGE]"
+            let amountDoge = null;
+            let toAddress = null;
+            const match1 = args.match(/^([\d.]+)\s*(?:DOGE\s+)?(?:to\s+)?([A-Za-z1-9]{25,45})$/i);
+            const match2 = args.match(/^([A-Za-z1-9]{25,45})\s+([\d.]+)\s*(?:DOGE)?$/i);
+            if (match1) {
+                amountDoge = parseFloat(match1[1]);
+                toAddress = match1[2];
+            }
+            else if (match2) {
+                toAddress = match2[1];
+                amountDoge = parseFloat(match2[2]);
+            }
+            if (!amountDoge || !toAddress || isNaN(amountDoge) || amountDoge <= 0) {
+                return {
+                    text: "🐕 Send DOGE\n" +
+                        "━━━━━━━━━━━━\n" +
+                        "⚠️ Could not parse amount and address.\n" +
+                        "Usage: /wallet send <amount> to <address>",
+                };
+            }
+            if (!isValidAddress(toAddress, cfg.network)) {
+                return {
+                    text: `🐕 ⚠️ Invalid ${cfg.network} address: ${toAddress}\nDouble-check and try again.`,
+                };
+            }
+            const initialized = await walletManager.isInitialized();
+            if (!initialized) {
+                return { text: "🐕 No wallet configured. Run /wallet init first." };
+            }
+            if (!walletManager.isUnlocked()) {
+                return { text: "🐕 🔒 Wallet is locked. Run /wallet unlock <passphrase> first." };
+            }
+            // Evaluate spending policy
+            const evaluation = policyEngine.evaluate(amountDoge, toAddress, "Manual send via /wallet send");
+            await auditLog.logPolicyCheck(dogeToKoinu(amountDoge), evaluation.tier, evaluation.action, evaluation.reason);
+            if (evaluation.action === "deny") {
+                // Notify on policy block
+                notifier.notifyPolicyBlock(evaluation.reason ?? "Unknown reason").catch(() => { });
+                return {
+                    text: "🐕 Send DENIED\n" +
+                        "━━━━━━━━━━━━━━\n" +
+                        `❌ ${evaluation.reason}\n` +
+                        `Tier: ${evaluation.tier} | ${formatDogeUsd(amountDoge, priceService.dogeToUsd(amountDoge))}`,
+                };
+            }
+            // Auto-approved tiers: execute immediately
+            if (evaluation.allowed) {
+                try {
+                    const result = await executeSend(toAddress, amountDoge, "Manual send via /wallet send", evaluation.tier);
                     return {
-                        text: "🐕 Approved & Sent!\n" +
-                            "━━━━━━━━━━━━━━━━━━\n" +
-                            `📤 To: ${truncAddr(match.to)}\n` +
-                            `💰 ${formatDogeUsd(match.amountDoge, priceService.dogeToUsd(match.amountDoge))}\n` +
+                        text: "🐕 Sending DOGE…\n" +
+                            "━━━━━━━━━━━━━━━━\n" +
+                            `📤 To: ${truncAddr(toAddress)}\n` +
+                            `💰 Amount: ${formatDogeUsd(amountDoge, priceService.dogeToUsd(amountDoge))}\n` +
                             `⛽ Fee: ${formatDoge(result.feeDoge)} DOGE\n` +
-                            `🔗 TX: ${result.txid}\n\n` +
-                            "✅ Broadcast! Much approve. Wow. 🐕",
+                            `📝 Tier: ${evaluation.tier}\n\n` +
+                            `✅ Transaction broadcast!\n` +
+                            `🔗 TX: ${result.txid}\n` +
+                            `⏱️ Est. confirm: ~1 min\n\n` +
+                            "Much send. Very crypto. Wow. 🐕",
                     };
                 }
                 catch (err) {
                     const errMsg = err instanceof Error ? err.message : String(err);
                     return {
-                        text: `🐕 Approved but Send Failed\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                            `✅ ${match.id.slice(0, 8)} approved.\n` +
-                            `❌ Send failed: ${errMsg}`,
+                        text: `🐕 Send FAILED\n━━━━━━━━━━━━━━\n❌ ${errMsg}\n\nMuch error. Very sad. 🐕`,
                     };
                 }
-            },
-        });
+            }
+            // Needs approval: queue and notify
+            const pending = approvalQueue.queueForApproval({
+                to: toAddress,
+                amount: dogeToKoinu(amountDoge),
+                amountDoge,
+                reason: "Manual send via /wallet send",
+                tier: evaluation.tier,
+                action: evaluation.action,
+                delayMinutes: evaluation.delayMinutes,
+            });
+            // Notify about the approval needed
+            notifier.notifyApprovalNeeded({
+                id: pending.id,
+                amountDoge,
+                to: toAddress,
+                tier: evaluation.tier,
+                reason: "Manual send via /wallet send",
+                usdValue: priceService.dogeToUsd(amountDoge),
+            }).catch(() => { });
+            const shortId = pending.id.slice(0, 8);
+            let text = "🐕 Approval Required\n" +
+                "━━━━━━━━━━━━━━━━━━━━\n" +
+                `📤 To: ${truncAddr(toAddress)}\n` +
+                `💰 Amount: ${formatDogeUsd(amountDoge, priceService.dogeToUsd(amountDoge))}\n` +
+                `📝 Tier: ${evaluation.tier}\n` +
+                `🆔 ID: ${shortId}…\n\n`;
+            if (evaluation.action === "delay") {
+                text +=
+                    `⏰ Auto-approves in ${evaluation.delayMinutes ?? 5} min unless denied.\n` +
+                        `Use /wallet deny ${shortId} to cancel.\n`;
+            }
+            else {
+                text += `Use /wallet approve ${shortId} or /wallet deny ${shortId}.\n`;
+            }
+            text += `\n${evaluation.reason ?? ""}`;
+            return { text };
+        }
         // ------------------------------------------------------------------
-        // Command: /deny <pendingId>
+        // Subcommand handler: approve
         // ------------------------------------------------------------------
-        api.registerCommand({
-            name: "deny",
-            description: "🐕 Deny a pending DOGE send — /deny <id>",
-            acceptsArgs: true,
-            handler: async (ctx) => {
-                const idPrefix = ctx.args?.trim() ?? "";
-                const callerId = ctx.chatId ?? ctx.chat?.id?.toString() ?? "unknown";
-                if (!idPrefix) {
-                    return { text: "🐕 Usage: /deny <id>\nSee /wallet pending for pending approvals." };
-                }
-                const allPending = approvalQueue.getPending();
-                const match = allPending.find((p) => p.id.startsWith(idPrefix));
-                if (!match) {
-                    return { text: `🐕 No pending approval matching "${idPrefix}". See /wallet pending.` };
-                }
-                // SECURITY [H-3]: Pass actual caller identity for verification
-                const denied = approvalQueue.deny(match.id, callerId);
-                if (!denied) {
-                    return { text: "🐕 Denial rejected — unauthorized or already resolved." };
-                }
-                await auditLog.logApproval(match.id, false, callerId, match.amount, match.to);
+        async function handleWalletApprove(args, callerId) {
+            const idPrefix = args.trim();
+            if (!idPrefix) {
+                return { text: "🐕 Usage: /wallet approve <id>\nSee /wallet pending for pending approvals." };
+            }
+            const allPending = approvalQueue.getPending();
+            const match = allPending.find((p) => p.id.startsWith(idPrefix));
+            if (!match) {
+                return { text: `🐕 No pending approval matching "${idPrefix}". See /wallet pending.` };
+            }
+            // SECURITY [H-3]: Pass actual caller identity for verification
+            const approved = approvalQueue.approve(match.id, callerId);
+            if (!approved) {
+                return { text: "🐕 Approval denied — unauthorized or already resolved." };
+            }
+            await auditLog.logApproval(match.id, true, callerId, match.amount, match.to);
+            try {
+                const result = await executeSend(match.to, match.amountDoge, match.reason, match.tier);
+                approvalQueue.markExecuted(match.id);
                 return {
-                    text: "🐕 Send Denied\n" +
-                        "━━━━━━━━━━━━━━\n" +
-                        `❌ ${formatDogeUsd(match.amountDoge, priceService.dogeToUsd(match.amountDoge))} → ${truncAddr(match.to)}\n` +
-                        `🆔 ${match.id.slice(0, 8)}…\n\n` +
-                        "Much deny. Very safe. Wow. 🐕",
+                    text: "🐕 Approved & Sent!\n" +
+                        "━━━━━━━━━━━━━━━━━━\n" +
+                        `📤 To: ${truncAddr(match.to)}\n` +
+                        `💰 ${formatDogeUsd(match.amountDoge, priceService.dogeToUsd(match.amountDoge))}\n` +
+                        `⛽ Fee: ${formatDoge(result.feeDoge)} DOGE\n` +
+                        `🔗 TX: ${result.txid}\n\n` +
+                        "✅ Broadcast! Much approve. Wow. 🐕",
                 };
-            },
-        });
+            }
+            catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                return {
+                    text: `🐕 Approved but Send Failed\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `✅ ${match.id.slice(0, 8)} approved.\n` +
+                        `❌ Send failed: ${errMsg}`,
+                };
+            }
+        }
+        // ------------------------------------------------------------------
+        // Subcommand handler: deny
+        // ------------------------------------------------------------------
+        async function handleWalletDeny(args, callerId) {
+            const idPrefix = args.trim();
+            if (!idPrefix) {
+                return { text: "🐕 Usage: /wallet deny <id>\nSee /wallet pending for pending approvals." };
+            }
+            const allPending = approvalQueue.getPending();
+            const match = allPending.find((p) => p.id.startsWith(idPrefix));
+            if (!match) {
+                return { text: `🐕 No pending approval matching "${idPrefix}". See /wallet pending.` };
+            }
+            // SECURITY [H-3]: Pass actual caller identity for verification
+            const denied = approvalQueue.deny(match.id, callerId);
+            if (!denied) {
+                return { text: "🐕 Denial rejected — unauthorized or already resolved." };
+            }
+            await auditLog.logApproval(match.id, false, callerId, match.amount, match.to);
+            return {
+                text: "🐕 Send Denied\n" +
+                    "━━━━━━━━━━━━━━\n" +
+                    `❌ ${formatDogeUsd(match.amountDoge, priceService.dogeToUsd(match.amountDoge))} → ${truncAddr(match.to)}\n` +
+                    `🆔 ${match.id.slice(0, 8)}…\n\n` +
+                    "Much deny. Very safe. Wow. 🐕",
+            };
+        }
         // ------------------------------------------------------------------
         // Command: /wallet — Dashboard + subcommands (with onboarding)
         // ------------------------------------------------------------------
@@ -867,6 +845,10 @@ const dogeWalletPlugin = {
                 const subCmd = parts[0].toLowerCase();
                 const subArgs = parts.slice(1).join(" ");
                 switch (subCmd) {
+                    case "balance": return await handleWalletBalance();
+                    case "send": return await handleWalletSend(subArgs);
+                    case "approve": return await handleWalletApprove(subArgs, chatId);
+                    case "deny": return await handleWalletDeny(subArgs, chatId);
                     case "init": return await handleWalletInit(subArgs);
                     case "recover": {
                         // SECURITY: Auto-delete message that may contain mnemonic
@@ -1254,7 +1236,7 @@ const dogeWalletPlugin = {
                         `  📝 Tier: ${p.tier} | Auto-${p.autoAction} in ${expiresIn}m\n` +
                         `  📋 ${p.reason}\n`;
             }
-            text += "\nUse /approve <id> or /deny <id>.";
+            text += "\nUse /wallet approve <id> or /wallet deny <id>.";
             return { text };
         }
         async function handleWalletHistory() {
@@ -1334,17 +1316,16 @@ const dogeWalletPlugin = {
                 text: "🐕 DOGE Wallet Commands\n" +
                     "━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
                     "📊 Info:\n" +
-                    "  /balance — Check wallet balance\n" +
                     "  /wallet — Dashboard overview\n" +
-                    "  /wallet status — Same as /wallet\n" +
+                    "  /wallet balance — Check wallet balance\n" +
                     "  /wallet address — Show receiving address\n" +
                     "  /wallet utxos — UTXO details\n" +
                     "  /wallet history — Recent transactions\n" +
                     "  /wallet export [N] — Export audit trail (last N entries)\n\n" +
                     "💸 Sending:\n" +
-                    "  /send <amount> to <address> — Send DOGE\n" +
-                    "  /approve <id> — Approve pending send\n" +
-                    "  /deny <id> — Deny pending send\n" +
+                    "  /wallet send <amount> to <address> — Send DOGE\n" +
+                    "  /wallet approve <id> — Approve pending send\n" +
+                    "  /wallet deny <id> — Deny pending send\n" +
                     "  /wallet pending — Show pending approvals\n\n" +
                     "🧾 Invoices (A2A):\n" +
                     "  /wallet invoice <amount> <description> — Create invoice\n" +
