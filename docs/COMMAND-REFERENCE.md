@@ -47,7 +47,7 @@ Show the current receiving address.
 ```
 🐕 Receiving Address
 ━━━━━━━━━━━━━━━━━━━━
-📍 D84hUKd37sKjmvfweAAs3CRWiZYuP54ygU
+📍 D6i8TeepmrGztENxdME84d2x5UVjLWncat
 
 Send DOGE here. Much receive. Wow. 🐕
 ```
