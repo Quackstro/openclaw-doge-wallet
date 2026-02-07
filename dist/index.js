@@ -400,7 +400,7 @@ const dogeWalletPlugin = {
         }, log);
         // Timers
         let utxoRefreshTimer = null;
-        const refreshIntervalMs = (cfg.utxo.refreshIntervalSeconds ?? 120) * 1000;
+        const refreshIntervalMs = (cfg.utxo.refreshIntervalSeconds ?? 300) * 1000;
         let approvalExpiryTimer = null;
         // Low-balance alert interval from config (default 24 hours)
         const lowBalanceAlertIntervalHours = cfg.notifications.lowBalanceAlertIntervalHours ?? 24;

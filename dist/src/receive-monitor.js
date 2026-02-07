@@ -15,7 +15,7 @@ import { koinuToDoge } from "./types.js";
 // ============================================================================
 // Constants
 // ============================================================================
-const DEFAULT_POLL_INTERVAL_MS = 30_000; // 30 seconds (~17% of free-tier BlockCypher quota)
+const DEFAULT_POLL_INTERVAL_MS = 120_000; // 120 seconds (~21% of free-tier BlockCypher quota with UTXO refresh)
 const MAX_SEEN_TXIDS = 500; // Prevent unbounded growth
 // ============================================================================
 // ReceiveMonitor

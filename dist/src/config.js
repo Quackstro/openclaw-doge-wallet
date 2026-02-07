@@ -47,7 +47,7 @@ const DEFAULTS = {
         freeze: false,
     },
     utxo: {
-        refreshIntervalSeconds: 120,
+        refreshIntervalSeconds: 300,
         dustThreshold: 100000,
         consolidationThreshold: 50,
         minConfirmations: 1,
