@@ -101,14 +101,21 @@ Send DOGE to your new address. You'll get a Telegram notification when it arrive
 | Command | Description |
 |---------|-------------|
 | `/wallet` | Dashboard or start onboarding |
-| `/balance` | Check current balance |
-| `/send <address> <amount>` | Send DOGE |
+| `/wallet balance` | Check current balance |
+| `/wallet send <amount> to <address>` | Send DOGE |
+| `/wallet address` | Show receiving address |
+| `/wallet history` | Recent transactions |
+| `/wallet utxos` | UTXO details |
 | `/wallet lock` | Lock wallet (clears private key from memory) |
 | `/wallet unlock <passphrase>` | Unlock wallet for sending |
 | `/wallet freeze` | Emergency stop all sends |
 | `/wallet unfreeze` | Resume normal operation |
-| `/approve <id>` | Approve a pending transaction |
-| `/deny <id>` | Deny a pending transaction |
+| `/wallet approve <id>` | Approve a pending transaction |
+| `/wallet deny <id>` | Deny a pending transaction |
+| `/wallet pending` | Show pending approvals |
+| `/wallet invoice <amount> <desc>` | Create A2A invoice |
+| `/wallet invoices` | List recent invoices |
+| `/wallet help` | Show all commands |
 
 ---
 
