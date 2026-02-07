@@ -33,7 +33,11 @@ export const DOGE_TESTNET = {
 export const KOINU_PER_DOGE = 100_000_000;
 /** Convert DOGE to koinu */
 export function dogeToKoinu(doge) {
-    return Math.round(doge * KOINU_PER_DOGE);
+    // Use string-based multiplication to avoid floating point errors
+    // e.g., 0.1 + 0.2 = 0.30000000000000004
+    const [whole = "0", frac = ""] = String(doge).split(".");
+    const padded = (frac + "00000000").slice(0, 8);
+    return parseInt(whole, 10) * KOINU_PER_DOGE + parseInt(padded, 10);
 }
 /** Convert koinu to DOGE */
 export function koinuToDoge(koinu) {

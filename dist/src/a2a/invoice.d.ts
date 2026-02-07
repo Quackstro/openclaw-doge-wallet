@@ -111,6 +111,11 @@ export declare class InvoiceManager {
      */
     isExpired(invoice: DogeInvoice): boolean;
     /**
+     * Expire all pending invoices past their expiry time.
+     * Returns the number of invoices expired.
+     */
+    cleanupExpired(): Promise<number>;
+    /**
      * Update the receiving address (for address rotation).
      */
     updateAddress(address: string): void;

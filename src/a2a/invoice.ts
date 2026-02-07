@@ -347,6 +347,24 @@ export class InvoiceManager {
   }
 
   /**
+   * Expire all pending invoices past their expiry time.
+   * Returns the number of invoices expired.
+   */
+  async cleanupExpired(): Promise<number> {
+    let count = 0;
+    for (const invoice of this.invoices.values()) {
+      if (invoice.status === "pending" && this.isExpired(invoice)) {
+        await this.markInvoiceExpired(invoice.invoiceId);
+        count++;
+      }
+    }
+    if (count > 0) {
+      this.log("info", `doge-wallet: invoice cleanup: expired ${count} stale invoices`);
+    }
+    return count;
+  }
+
+  /**
    * Update the receiving address (for address rotation).
    */
   updateAddress(address: string): void {

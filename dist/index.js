@@ -12,6 +12,7 @@
  * Much plugin. Very crypto. Wow. 🐕
  */
 import { Type } from "@sinclair/typebox";
+/* eslint-disable @typescript-eslint/no-explicit-any — PluginApi shape is dynamic */
 import { parseDogeConfig } from "./src/config.js";
 import { PriceService } from "./src/price.js";
 import { AuditLog } from "./src/audit.js";
@@ -960,7 +961,7 @@ const dogeWalletPlugin = {
         api.registerCallbackHandler?.({
             pattern: /^doge:lowbal:/,
             handler: async (ctx) => {
-                const callbackData = ctx.callbackData ?? ctx.data;
+                const callbackData = ctx.callbackData ?? ctx.data ?? "";
                 // Get current balance for state tracking
                 const balance = utxoManager.getBalance();
                 const totalDoge = koinuToDoge(balance.confirmed + balance.unconfirmed);
@@ -973,7 +974,7 @@ const dogeWalletPlugin = {
                 }
                 // Handle dynamic snooze: doge:lowbal:snooze:<hours>
                 if (callbackData.startsWith(LOW_BALANCE_CALLBACKS.SNOOZE + ':')) {
-                    const hoursStr = callbackData.split(':').pop();
+                    const hoursStr = callbackData.split(':').pop() ?? "0";
                     const hours = parseInt(hoursStr, 10);
                     if (!isNaN(hours) && hours > 0) {
                         const durationMs = hours * 60 * 60 * 1000;
@@ -1510,6 +1511,22 @@ const dogeWalletPlugin = {
             if (approvalExpiryTimer) {
                 clearInterval(approvalExpiryTimer);
                 approvalExpiryTimer = null;
+            }
+        }
+        // Invoice cleanup timer — expire stale invoices every 5 min
+        let invoiceCleanupTimer = null;
+        function startInvoiceCleanup() {
+            invoiceCleanupTimer = setInterval(() => {
+                invoiceManager.cleanupExpired().catch(() => { });
+            }, 300_000); // 5 minutes
+            if (invoiceCleanupTimer && typeof invoiceCleanupTimer.unref === "function") {
+                invoiceCleanupTimer.unref();
+            }
+        }
+        function stopInvoiceCleanup() {
+            if (invoiceCleanupTimer) {
+                clearInterval(invoiceCleanupTimer);
+                invoiceCleanupTimer = null;
             }
         }
         // ------------------------------------------------------------------
@@ -2109,6 +2126,7 @@ const dogeWalletPlugin = {
                     startReceiveMonitor(address);
                 }
                 startApprovalExpiryCheck();
+                startInvoiceCleanup();
                 // Clean up expired invoices on startup
                 cleanupExpiredInvoices(invoiceManager, { log }).catch((err) => {
                     log("warn", `doge-wallet: invoice cleanup failed: ${err.message ?? err}`);
@@ -2137,6 +2155,7 @@ const dogeWalletPlugin = {
             stop: () => {
                 stopUtxoRefresh();
                 stopApprovalExpiryCheck();
+                stopInvoiceCleanup();
                 receiveMonitor.stop();
                 txTracker.stopPolling();
                 walletManager.lock();

@@ -13,6 +13,20 @@
  */
 
 import { Type } from "@sinclair/typebox";
+
+/** Context passed to command and callback handlers by the OpenClaw plugin API. */
+interface CommandContext {
+  args?: string;
+  chatId?: string;
+  chat?: { id?: string };
+  messageId?: string;
+  message?: { message_id?: number; text?: string };
+  callbackData?: string;
+  data?: string;
+  text?: string;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any — PluginApi shape is dynamic */
 import { parseDogeConfig, isWalletInitialized } from "./src/config.js";
 import { PriceService } from "./src/price.js";
 import { AuditLog } from "./src/audit.js";
@@ -1016,7 +1030,7 @@ const dogeWalletPlugin = {
       name: "wallet",
       description: "🐕 Wallet dashboard & management — /wallet [subcommand]",
       acceptsArgs: true,
-      handler: async (ctx: any) => {
+      handler: async (ctx: CommandContext) => {
         const args = ctx.args?.trim() ?? "";
         const chatId = ctx.chatId ?? ctx.chat?.id ?? "unknown";
         const messageId = ctx.messageId ?? ctx.message?.message_id?.toString();
@@ -1105,7 +1119,7 @@ const dogeWalletPlugin = {
     // ------------------------------------------------------------------
     api.registerCallbackHandler?.({
       pattern: /^doge:onboard:/,
-      handler: async (ctx: any) => {
+      handler: async (ctx: CommandContext) => {
         const chatId = ctx.chatId ?? ctx.chat?.id ?? "unknown";
         const callbackData = ctx.callbackData ?? ctx.data;
 
@@ -1144,8 +1158,8 @@ const dogeWalletPlugin = {
     // ------------------------------------------------------------------
     api.registerCallbackHandler?.({
       pattern: /^doge:lowbal:/,
-      handler: async (ctx: any) => {
-        const callbackData = ctx.callbackData ?? ctx.data;
+      handler: async (ctx: CommandContext) => {
+        const callbackData = ctx.callbackData ?? ctx.data ?? "";
 
         // Get current balance for state tracking
         const balance = utxoManager.getBalance();
@@ -1161,7 +1175,7 @@ const dogeWalletPlugin = {
 
         // Handle dynamic snooze: doge:lowbal:snooze:<hours>
         if (callbackData.startsWith(LOW_BALANCE_CALLBACKS.SNOOZE + ':')) {
-          const hoursStr = callbackData.split(':').pop();
+          const hoursStr = callbackData.split(':').pop() ?? "0";
           const hours = parseInt(hoursStr, 10);
           if (!isNaN(hours) && hours > 0) {
             const durationMs = hours * 60 * 60 * 1000;
@@ -1183,7 +1197,7 @@ const dogeWalletPlugin = {
     api.registerMessageHandler?.({
       pattern: /./,
       priority: 100, // High priority to intercept during onboarding
-      handler: async (ctx: any) => {
+      handler: async (ctx: CommandContext) => {
         const chatId = ctx.chatId ?? ctx.chat?.id ?? "unknown";
         const text = ctx.text ?? ctx.message?.text ?? "";
         const messageId = ctx.messageId ?? ctx.message?.message_id?.toString();
@@ -1801,6 +1815,23 @@ const dogeWalletPlugin = {
       if (approvalExpiryTimer) {
         clearInterval(approvalExpiryTimer);
         approvalExpiryTimer = null;
+      }
+    }
+
+    // Invoice cleanup timer — expire stale invoices every 5 min
+    let invoiceCleanupTimer: ReturnType<typeof setInterval> | null = null;
+    function startInvoiceCleanup(): void {
+      invoiceCleanupTimer = setInterval(() => {
+        invoiceManager.cleanupExpired().catch(() => {});
+      }, 300_000); // 5 minutes
+      if (invoiceCleanupTimer && typeof invoiceCleanupTimer.unref === "function") {
+        invoiceCleanupTimer.unref();
+      }
+    }
+    function stopInvoiceCleanup(): void {
+      if (invoiceCleanupTimer) {
+        clearInterval(invoiceCleanupTimer);
+        invoiceCleanupTimer = null;
       }
     }
 
@@ -2502,6 +2533,7 @@ const dogeWalletPlugin = {
         }
 
         startApprovalExpiryCheck();
+        startInvoiceCleanup();
 
         // Clean up expired invoices on startup
         cleanupExpiredInvoices(invoiceManager, { log }).catch((err) => {
@@ -2537,6 +2569,7 @@ const dogeWalletPlugin = {
       stop: () => {
         stopUtxoRefresh();
         stopApprovalExpiryCheck();
+        stopInvoiceCleanup();
         receiveMonitor.stop();
         txTracker.stopPolling();
         walletManager.lock();
