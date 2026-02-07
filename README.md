@@ -117,6 +117,8 @@ Send DOGE to your new address. You'll get a Telegram notification when it arrive
 | `/wallet invoices` | List recent invoices |
 | `/wallet help` | Show all commands |
 
+📖 **[Full Command Reference with sample output →](docs/COMMAND-REFERENCE.md)**
+
 ---
 
 ## Agent Tools
