@@ -29,7 +29,13 @@ export declare class AuditLog {
     logPolicyCheck(amountKoinu: number, tier: string, action: string, reason?: string): Promise<AuditEntry>;
     /** Log a freeze/unfreeze event */
     logFreeze(frozen: boolean, by: string): Promise<AuditEntry>;
+    /** Log a receive transaction */
+    logReceive(txid: string, fromAddress: string, amountKoinu: number, confirmations: number): Promise<AuditEntry>;
     /** Get recent send transactions for history display */
     getSendHistory(limit?: number): Promise<AuditEntry[]>;
+    /** Get recent receive transactions */
+    getReceiveHistory(limit?: number): Promise<AuditEntry[]>;
+    /** Get both sends and receives sorted by timestamp (newest first) */
+    getFullHistory(limit?: number): Promise<AuditEntry[]>;
 }
 //# sourceMappingURL=audit.d.ts.map

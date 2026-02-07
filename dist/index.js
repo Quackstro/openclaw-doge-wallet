@@ -395,6 +395,7 @@ const dogeWalletPlugin = {
                     amountDoge,
                     usdValue: priceService.dogeToUsd(amountDoge),
                 }).catch(() => { });
+                auditLog.logReceive(incomingTx.txid, incomingTx.fromAddress, incomingTx.amountKoinu, incomingTx.confirmations ?? 0).catch(() => { });
             },
         }, log);
         // Timers
@@ -1243,19 +1244,27 @@ const dogeWalletPlugin = {
             return { text };
         }
         async function handleWalletHistory() {
-            const entries = await auditLog.getSendHistory(20);
+            const entries = await auditLog.getFullHistory(20);
             if (entries.length === 0) {
                 return { text: "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\nNo transactions yet. 🐕" };
             }
             let text = "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\n";
             for (const e of entries.slice(0, 15)) {
                 const amountDoge = e.amount ? koinuToDoge(e.amount) : 0;
-                const feeDoge = e.fee ? koinuToDoge(e.fee) : 0;
                 const ts = formatET(e.timestamp);
-                text +=
-                    `\n📤 ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
-                        `  ⛽ ${formatDoge(feeDoge)} fee | ${e.tier ?? "?"} | ${ts}\n` +
-                        `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+                if (e.action === "receive") {
+                    text +=
+                        `\n📥 ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
+                            `  ${ts}\n` +
+                            `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+                }
+                else {
+                    const feeDoge = e.fee ? koinuToDoge(e.fee) : 0;
+                    text +=
+                        `\n📤 ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
+                            `  ⛽ ${formatDoge(feeDoge)} fee | ${e.tier ?? "?"} | ${ts}\n` +
+                            `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+                }
             }
             if (entries.length > 15)
                 text += `\n… and ${entries.length - 15} more.`;
@@ -1697,7 +1706,7 @@ const dogeWalletPlugin = {
             }),
             async execute(_toolCallId, params) {
                 const limit = params.limit ?? 10;
-                const entries = await auditLog.getSendHistory(limit);
+                const entries = await auditLog.getFullHistory(limit);
                 if (entries.length === 0) {
                     return {
                         content: [{ type: "text", text: "No transaction history yet." }],
@@ -1706,7 +1715,7 @@ const dogeWalletPlugin = {
                 }
                 const transactions = entries.map((e) => ({
                     txid: e.txid,
-                    type: "sent",
+                    type: e.action === "receive" ? "received" : "sent",
                     amount: e.amount ? koinuToDoge(e.amount) : 0,
                     address: e.address ?? "unknown",
                     fee: e.fee ? koinuToDoge(e.fee) : 0,
@@ -1715,7 +1724,11 @@ const dogeWalletPlugin = {
                     reason: e.reason,
                 }));
                 const summary = transactions
-                    .map((t) => `${formatDoge(t.amount)} DOGE → ${truncAddr(t.address)} (${formatET(t.timestamp)})`)
+                    .map((t) => {
+                    const icon = t.type === "received" ? "📥" : "📤";
+                    const arrow = t.type === "received" ? "←" : "→";
+                    return `${icon} ${formatDoge(t.amount)} DOGE ${arrow} ${truncAddr(t.address)} (${formatET(t.timestamp)})`;
+                })
                     .join("\n");
                 return {
                     content: [{ type: "text", text: `Recent transactions:\n${summary}` }],

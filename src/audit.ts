@@ -166,8 +166,39 @@ export class AuditLog {
     });
   }
 
+  /** Log a receive transaction */
+  async logReceive(
+    txid: string,
+    fromAddress: string,
+    amountKoinu: number,
+    confirmations: number,
+  ): Promise<AuditEntry> {
+    return this.logAudit({
+      action: "receive",
+      txid,
+      address: fromAddress,
+      amount: amountKoinu,
+      reason: `Received ${amountKoinu / 1e8} DOGE from ${fromAddress} (${confirmations} conf)`,
+      initiatedBy: "external",
+      metadata: { confirmations },
+    });
+  }
+
   /** Get recent send transactions for history display */
   async getSendHistory(limit: number = 20): Promise<AuditEntry[]> {
     return this.getByAction("send", limit);
+  }
+
+  /** Get recent receive transactions */
+  async getReceiveHistory(limit: number = 20): Promise<AuditEntry[]> {
+    return this.getByAction("receive", limit);
+  }
+
+  /** Get both sends and receives sorted by timestamp (newest first) */
+  async getFullHistory(limit: number = 20): Promise<AuditEntry[]> {
+    const all = await this.getAuditLog(1000);
+    return all
+      .filter((e) => e.action === "send" || e.action === "receive")
+      .slice(0, limit);
   }
 }
