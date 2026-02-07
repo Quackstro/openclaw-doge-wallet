@@ -410,9 +410,9 @@ export function completionMessage(address: string): { text: string; keyboard: In
     'Send DOGE to this address to fund your wallet.\n\n' +
     '━━━━━━━━━━━━━━━━━━━━\n' +
     '📋 Quick commands:\n' +
-    '• /balance — Check your balance\n' +
-    '• /send <address> <amount> — Send DOGE\n' +
-    '• /wallet — Wallet dashboard\n\n' +
+    '• /wallet balance — Check your balance\n' +
+    '• /wallet send <amount> to <address> — Send DOGE\n' +
+    '• /wallet help — All commands\n\n' +
     '💡 Tip: Start with a small test deposit (~10 DOGE)\n\n' +
     'Much wallet. Very ready. Wow. 🐕';
 

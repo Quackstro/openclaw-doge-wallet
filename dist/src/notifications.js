@@ -150,7 +150,7 @@ export class WalletNotifier {
             `💰 ${fmtDogeUsd(pending.amountDoge, pending.usdValue)} → ${truncAddr(pending.to)}\n` +
             `📝 Tier: ${pending.tier}\n` +
             (pending.reason ? `📋 Reason: ${pending.reason}\n` : "") +
-            `\nReply /approve ${shortId} or /deny ${shortId}`;
+            `\nReply /wallet approve ${shortId} or /wallet deny ${shortId}`;
         await this.send(msg, "high");
     }
     /** Transaction confirmation update. Priority: low (all only). */
