@@ -1496,13 +1496,13 @@ const dogeWalletPlugin = {
         const ts = formatET(e.timestamp);
         if (e.action === "receive") {
           text +=
-            `\n📥 ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
+            `\n➕ ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
             `  ${ts}\n` +
             `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
         } else {
           const feeDoge = e.fee ? koinuToDoge(e.fee) : 0;
           text +=
-            `\n📤 ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
+            `\n➖ ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
             `  ⛽ ${formatDoge(feeDoge)} fee | ${e.tier ?? "?"} | ${ts}\n` +
             `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
         }
@@ -2052,7 +2052,7 @@ const dogeWalletPlugin = {
 
           const summary = transactions
             .map((t) => {
-              const icon = t.type === "received" ? "📥" : "📤";
+              const icon = t.type === "received" ? "➕" : "➖";
               const arrow = t.type === "received" ? "←" : "→";
               return `${icon} ${formatDoge(t.amount)} DOGE ${arrow} ${truncAddr(t.address)} (${formatET(t.timestamp)})`;
             })
