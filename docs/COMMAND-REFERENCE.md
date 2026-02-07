@@ -76,19 +76,19 @@ Recent sends and receives.
 🐕 Transaction History
 ━━━━━━━━━━━━━━━━━━━━━━
 
-➖ 5.00 DOGE → D84hUK…4ygU
+➖ 5.00 DOGE → D6i8Te…ncat
   ⛽ 0.23 fee | micro | Feb 7, 9:10 AM
   🔗 5e53bbbfbc20a35b…
 
-➖ 3.00 DOGE → D84hUK…4ygU
+➖ 3.00 DOGE → D6i8Te…ncat
   ⛽ 0.23 fee | micro | Feb 7, 9:04 AM
   🔗 3b757048560ce535…
 
-➕ 10.14 DOGE ← D78TRc…fit3
+➕ 10.14 DOGE ← D6i8Te…ncat
   Feb 6, 9:53 PM
   🔗 54f9bb9add9bfeed…
 
-➖ 1.00 DOGE → D84hUK…4ygU
+➖ 1.00 DOGE → D6i8Te…ncat
   ⛽ 0.23 fee | micro | Feb 7, 8:22 AM
   🔗 db77d0493b6a2f2f…
 ```
@@ -102,16 +102,16 @@ Send DOGE to an address. Supports multiple formats.
 
 **Usage:**
 ```
-/wallet send 50 to DRecipientAddress
-/wallet send 50 DOGE to DRecipientAddress
-/wallet send DRecipientAddress 50
+/wallet send 50 to D6i8TeepmrGztENxdME84d2x5UVjLWncat
+/wallet send 50 DOGE to D6i8TeepmrGztENxdME84d2x5UVjLWncat
+/wallet send D6i8TeepmrGztENxdME84d2x5UVjLWncat 50
 ```
 
 **Success output:**
 ```
 🐕 Sending DOGE…
 ━━━━━━━━━━━━━━━━
-📤 To: DReci…pient
+📤 To: D6i8Te…ncat
 💰 Amount: 50.00 DOGE (~$4.82)
 ⛽ Fee: 0.23 DOGE
 📝 Tier: small
@@ -140,7 +140,7 @@ Tier: large | 500.00 DOGE (~$48.17)
 ```
 🐕 Approval Required
 ━━━━━━━━━━━━━━━━━━━━
-📤 To: DReci…pient
+📤 To: D6i8Te…ncat
 💰 Amount: 500.00 DOGE (~$48.17)
 📝 Tier: large
 🆔 ID: a1b2c3d4…
@@ -155,7 +155,7 @@ Approve a pending send.
 ```
 🐕 Approved & Sent!
 ━━━━━━━━━━━━━━━━━━
-📤 To: DReci…pient
+📤 To: D6i8Te…ncat
 💰 500.00 DOGE (~$48.17)
 ⛽ Fee: 0.34 DOGE
 🔗 TX: f6e5d4c3b2a1...
@@ -169,7 +169,7 @@ Deny a pending send.
 ```
 🐕 Send Denied
 ━━━━━━━━━━━━━━
-❌ 500.00 DOGE (~$48.17) → DReci…pient
+❌ 500.00 DOGE (~$48.17) → D6i8Te…ncat
 🆔 a1b2c3d4…
 
 Much deny. Very safe. Wow. 🐕
@@ -182,7 +182,7 @@ Show all pending approval requests.
 🐕 Pending Approvals (1)
 ━━━━━━━━━━━━━━━━━━━━━━━━
 🆔 a1b2c3d4…
-📤 500.00 DOGE → DReci…pient
+📤 500.00 DOGE → D6i8Te…ncat
 📝 Tier: large
 ⏰ Auto-approves in 3m 22s
 
@@ -289,10 +289,10 @@ Export the last N audit trail entries (default: 20).
 ```
 🐕 Audit Trail (last 5)
 ━━━━━━━━━━━━━━━━━━━━━━━
-1. send    | 5.00 DOGE → D84hUK… | Feb 7, 9:10 AM
-2. send    | 3.00 DOGE → D84hUK… | Feb 7, 9:04 AM
-3. receive | 10.14 DOGE ← D78TRc… | Feb 6, 9:53 PM
-4. send    | 1.00 DOGE → D84hUK… | Feb 7, 8:22 AM
+1. send    | 5.00 DOGE → D6i8Te… | Feb 7, 9:10 AM
+2. send    | 3.00 DOGE → D6i8Te… | Feb 7, 9:04 AM
+3. receive | 10.14 DOGE ← D6i8Te… | Feb 6, 9:53 PM
+4. send    | 1.00 DOGE → D6i8Te… | Feb 7, 8:22 AM
 5. unlock  | Wallet unlocked      | Feb 7, 8:20 AM
 ```
 
