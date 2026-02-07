@@ -1022,6 +1022,7 @@ const dogeWalletPlugin = {
         const subArgs = parts.slice(1).join(" ");
 
         switch (subCmd) {
+          case "help":      return handleWalletHelp();
           case "balance":   return await handleWalletBalance();
           case "send":      return await handleWalletSend(subArgs);
           case "approve":   return await handleWalletApprove(subArgs, chatId);
@@ -1051,7 +1052,6 @@ const dogeWalletPlugin = {
           }
           case "invoice":   return await handleWalletInvoice(subArgs);
           case "invoices":  return await handleWalletInvoices();
-          case "help":      return handleWalletHelp();
           default:
             return {
               text:
