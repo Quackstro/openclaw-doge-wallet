@@ -10,7 +10,12 @@ import type { AuditEntry, AuditAction } from "./types.js";
 export declare class AuditLog {
     private filePath;
     private log;
+    /** In-memory cache of received txids → audit entry for fast dedup (avoids reading full audit file) */
+    private seenReceiveByTxid;
+    private seenReceiveTxidsLoaded;
     constructor(dataDir: string, log?: (level: "info" | "warn" | "error", msg: string) => void);
+    /** Load receive txids into memory cache (called once on first receive check) */
+    private loadSeenReceiveTxids;
     /** Log an audit entry — appends to the JSONL file */
     logAudit(entry: Omit<AuditEntry, "id" | "timestamp">): Promise<AuditEntry>;
     /** Read recent audit entries */
@@ -29,7 +34,7 @@ export declare class AuditLog {
     logPolicyCheck(amountKoinu: number, tier: string, action: string, reason?: string): Promise<AuditEntry>;
     /** Log a freeze/unfreeze event */
     logFreeze(frozen: boolean, by: string): Promise<AuditEntry>;
-    /** Log a receive transaction (deduplicated by txid) */
+    /** Log a receive transaction (deduplicated by txid using in-memory cache) */
     logReceive(txid: string, fromAddress: string, amountKoinu: number, confirmations: number): Promise<AuditEntry>;
     /** Get recent send transactions for history display */
     getSendHistory(limit?: number): Promise<AuditEntry[]>;

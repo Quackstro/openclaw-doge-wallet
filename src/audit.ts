@@ -16,6 +16,9 @@ import type { AuditEntry, AuditAction } from "./types.js";
 export class AuditLog {
   private filePath: string;
   private log: (level: "info" | "warn" | "error", msg: string) => void;
+  /** In-memory cache of received txids → audit entry for fast dedup (avoids reading full audit file) */
+  private seenReceiveByTxid: Map<string, AuditEntry> = new Map();
+  private seenReceiveTxidsLoaded = false;
 
   constructor(
     dataDir: string,
@@ -23,6 +26,20 @@ export class AuditLog {
   ) {
     this.filePath = join(dataDir, "audit", "audit.jsonl");
     this.log = log ?? (() => {});
+  }
+
+  /** Load receive txids into memory cache (called once on first receive check) */
+  private async loadSeenReceiveTxids(): Promise<void> {
+    if (this.seenReceiveTxidsLoaded) return;
+    try {
+      const all = await this.getAuditLog(10000);
+      for (const e of all) {
+        if (e.action === "receive" && e.txid) {
+          this.seenReceiveByTxid.set(e.txid, e);
+        }
+      }
+    } catch { /* start fresh if read fails */ }
+    this.seenReceiveTxidsLoaded = true;
   }
 
   /** Log an audit entry — appends to the JSONL file */
@@ -166,21 +183,23 @@ export class AuditLog {
     });
   }
 
-  /** Log a receive transaction (deduplicated by txid) */
+  /** Log a receive transaction (deduplicated by txid using in-memory cache) */
   async logReceive(
     txid: string,
     fromAddress: string,
     amountKoinu: number,
     confirmations: number,
   ): Promise<AuditEntry> {
-    // Deduplicate: skip if this txid was already logged as a receive
-    const existing = await this.getAuditLog(1000);
-    if (existing.some((e) => e.action === "receive" && e.txid === txid)) {
+    // Load cache on first call (one-time file read)
+    await this.loadSeenReceiveTxids();
+
+    // Fast in-memory dedup check
+    if (this.seenReceiveByTxid.has(txid)) {
       this.log("info", `doge-wallet: audit: receive ${txid} already logged — skipping duplicate`);
-      return existing.find((e) => e.action === "receive" && e.txid === txid)!;
+      return this.seenReceiveByTxid.get(txid)!;
     }
 
-    return this.logAudit({
+    const entry = await this.logAudit({
       action: "receive",
       txid,
       address: fromAddress,
@@ -189,6 +208,10 @@ export class AuditLog {
       initiatedBy: "external",
       metadata: { confirmations },
     });
+
+    // Cache for future dedup
+    this.seenReceiveByTxid.set(txid, entry);
+    return entry;
   }
 
   /** Get recent send transactions for history display */
