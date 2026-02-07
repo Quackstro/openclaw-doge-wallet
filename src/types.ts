@@ -232,6 +232,8 @@ export interface DogeWalletConfig {
   utxo: UtxoConfig;
   notifications: NotificationsConfig;
   fees: FeesConfig;
+  /** Chat IDs authorized to approve/deny sends. Empty = any caller allowed (legacy behavior). */
+  ownerChatIds?: string[];
 }
 
 // ============================================================================

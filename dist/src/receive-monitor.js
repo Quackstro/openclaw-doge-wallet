@@ -30,6 +30,8 @@ export class ReceiveMonitor {
     lastPollAt = null;
     pollTimer = null;
     address = null;
+    consecutiveFailures = 0;
+    maxBackoffMs = 600_000; // 10 min max backoff
     constructor(dataDir, provider, callbacks, log, pollIntervalMs) {
         this.statePath = join(dataDir, "receive-state.json");
         this.provider = provider;
@@ -56,26 +58,46 @@ export class ReceiveMonitor {
         }
         if (this.pollTimer)
             return; // already running
-        // Do an immediate poll
-        this.poll().catch((err) => {
-            this.log("warn", `doge-wallet: receive monitor initial poll failed: ${err.message ?? err}`);
+        // Do an immediate poll, then schedule next
+        this.pollOnce();
+        this.log("info", `doge-wallet: receive monitor started for ${this.address} (base interval ${this.pollIntervalMs / 1000}s, backoff on failure)`);
+    }
+    /**
+     * Poll once then schedule next with exponential backoff on failure.
+     */
+    pollOnce() {
+        this.poll()
+            .then(() => {
+            this.consecutiveFailures = 0;
+            this.scheduleNext();
+        })
+            .catch((err) => {
+            this.consecutiveFailures++;
+            this.log("warn", `doge-wallet: receive monitor poll failed (attempt ${this.consecutiveFailures}): ${err.message ?? err}`);
+            this.scheduleNext();
         });
-        this.pollTimer = setInterval(() => {
-            this.poll().catch((err) => {
-                this.log("warn", `doge-wallet: receive monitor poll failed: ${err.message ?? err}`);
-            });
-        }, this.pollIntervalMs);
+    }
+    /**
+     * Schedule next poll with exponential backoff.
+     */
+    scheduleNext() {
+        if (!this.address)
+            return;
+        const backoff = Math.min(this.pollIntervalMs * Math.pow(2, this.consecutiveFailures), this.maxBackoffMs);
+        this.pollTimer = setTimeout(() => this.pollOnce(), backoff);
         if (this.pollTimer && typeof this.pollTimer.unref === "function") {
             this.pollTimer.unref();
         }
-        this.log("info", `doge-wallet: receive monitor started for ${this.address} (every ${this.pollIntervalMs / 1000}s)`);
+        if (this.consecutiveFailures > 0) {
+            this.log("info", `doge-wallet: receive monitor backing off — next poll in ${Math.round(backoff / 1000)}s`);
+        }
     }
     /**
      * Stop monitoring.
      */
     stop() {
         if (this.pollTimer) {
-            clearInterval(this.pollTimer);
+            clearTimeout(this.pollTimer);
             this.pollTimer = null;
             this.log("info", "doge-wallet: receive monitor stopped");
         }

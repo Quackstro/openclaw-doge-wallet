@@ -30,6 +30,8 @@ export declare class ReceiveMonitor {
     private lastPollAt;
     private pollTimer;
     private address;
+    private consecutiveFailures;
+    private readonly maxBackoffMs;
     constructor(dataDir: string, provider: DogeApiProvider, callbacks?: ReceiveCallbacks, log?: (level: "info" | "warn" | "error", msg: string) => void, pollIntervalMs?: number);
     /**
      * Set the wallet address to monitor.
@@ -39,6 +41,14 @@ export declare class ReceiveMonitor {
      * Start monitoring for incoming transactions.
      */
     start(): void;
+    /**
+     * Poll once then schedule next with exponential backoff on failure.
+     */
+    private pollOnce;
+    /**
+     * Schedule next poll with exponential backoff.
+     */
+    private scheduleNext;
     /**
      * Stop monitoring.
      */

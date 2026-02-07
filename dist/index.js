@@ -400,7 +400,7 @@ const dogeWalletPlugin = {
         }, log);
         // Timers
         let utxoRefreshTimer = null;
-        const refreshIntervalMs = (cfg.utxo.refreshIntervalSeconds ?? 300) * 1000;
+        const refreshIntervalMs = (cfg.utxo.refreshIntervalSeconds ?? 180) * 1000;
         let approvalExpiryTimer = null;
         // Low-balance alert interval from config (default 24 hours)
         const lowBalanceAlertIntervalHours = cfg.notifications.lowBalanceAlertIntervalHours ?? 24;
@@ -499,9 +499,16 @@ const dogeWalletPlugin = {
                 feeRate,
             });
             const privateKey = walletManager.getPrivateKey();
-            // Pass UTXOs to signer so it can reconstruct proper PublicKeyHashInput objects
-            // (deserialization from hex creates generic Input objects that lack clearSignatures)
-            const signResult = signTransaction(txResult.rawTx, privateKey, cfg.network, selection.selected);
+            let signResult;
+            try {
+                // Pass UTXOs to signer so it can reconstruct proper PublicKeyHashInput objects
+                // (deserialization from hex creates generic Input objects that lack clearSignatures)
+                signResult = signTransaction(txResult.rawTx, privateKey, cfg.network, selection.selected);
+            }
+            finally {
+                // SECURITY [H-1]: Zero private key from memory on ALL paths (success + error)
+                privateKey.fill(0);
+            }
             for (const utxo of selection.selected) {
                 await utxoManager.markSpent(utxo.txid, utxo.vout, signResult.txid);
             }
@@ -658,7 +665,8 @@ const dogeWalletPlugin = {
                 toAddress = match2[1];
                 amountDoge = parseFloat(match2[2]);
             }
-            if (!amountDoge || !toAddress || isNaN(amountDoge) || amountDoge <= 0) {
+            const MAX_DOGE = 10_000_000_000; // 10 billion — above max supply
+            if (!amountDoge || !toAddress || isNaN(amountDoge) || amountDoge <= 0 || amountDoge > MAX_DOGE || !isFinite(amountDoge)) {
                 return {
                     text: "🐕 Send DOGE\n" +
                         "━━━━━━━━━━━━\n" +
@@ -756,6 +764,10 @@ const dogeWalletPlugin = {
         // Subcommand handler: approve
         // ------------------------------------------------------------------
         async function handleWalletApprove(args, callerId) {
+            // SECURITY [L-3]: Owner allowlist check
+            if (cfg.ownerChatIds?.length && !cfg.ownerChatIds.includes(callerId)) {
+                return { text: "🐕 ⛔ Unauthorized — only wallet owners can approve sends." };
+            }
             const idPrefix = args.trim();
             if (!idPrefix) {
                 return { text: "🐕 Usage: /wallet approve <id>\nSee /wallet pending for pending approvals." };
@@ -797,6 +809,10 @@ const dogeWalletPlugin = {
         // Subcommand handler: deny
         // ------------------------------------------------------------------
         async function handleWalletDeny(args, callerId) {
+            // SECURITY [L-3]: Owner allowlist check
+            if (cfg.ownerChatIds?.length && !cfg.ownerChatIds.includes(callerId)) {
+                return { text: "🐕 ⛔ Unauthorized — only wallet owners can deny sends." };
+            }
             const idPrefix = args.trim();
             if (!idPrefix) {
                 return { text: "🐕 Usage: /wallet deny <id>\nSee /wallet pending for pending approvals." };
