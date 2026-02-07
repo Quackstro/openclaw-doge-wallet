@@ -516,6 +516,20 @@ const dogeWalletPlugin = {
                 throw err;
             }
             const txid = broadcastResult.txid === "already-broadcast" ? signResult.txid : broadcastResult.txid;
+            // Optimistically add change output so balance is immediately correct
+            const changeOutput = txResult.outputs.find((o) => o.isChange && o.amount > 0);
+            if (changeOutput) {
+                const changeVout = txResult.outputs.indexOf(changeOutput);
+                await utxoManager.addUtxo({
+                    txid,
+                    vout: changeVout,
+                    address: changeOutput.address,
+                    scriptPubKey: "",
+                    amount: changeOutput.amount,
+                    confirmations: 0,
+                    locked: false,
+                });
+            }
             limitTracker.recordSpend(amountKoinu + txResult.fee);
             txTracker.track(txid, { to, amount: amountKoinu, fee: txResult.fee });
             await auditLog.logSend(txid, to, amountKoinu, txResult.fee, tier, "broadcast", reason);
@@ -1254,14 +1268,14 @@ const dogeWalletPlugin = {
                 const ts = formatET(e.timestamp);
                 if (e.action === "receive") {
                     text +=
-                        `\n📥 ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
+                        `\n➕ ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
                             `  ${ts}\n` +
                             `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
                 }
                 else {
                     const feeDoge = e.fee ? koinuToDoge(e.fee) : 0;
                     text +=
-                        `\n📤 ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
+                        `\n➖ ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
                             `  ⛽ ${formatDoge(feeDoge)} fee | ${e.tier ?? "?"} | ${ts}\n` +
                             `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
                 }
@@ -1725,7 +1739,7 @@ const dogeWalletPlugin = {
                 }));
                 const summary = transactions
                     .map((t) => {
-                    const icon = t.type === "received" ? "📥" : "📤";
+                    const icon = t.type === "received" ? "➕" : "➖";
                     const arrow = t.type === "received" ? "←" : "→";
                     return `${icon} ${formatDoge(t.amount)} DOGE ${arrow} ${truncAddr(t.address)} (${formatET(t.timestamp)})`;
                 })

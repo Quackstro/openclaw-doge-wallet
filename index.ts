@@ -631,6 +631,21 @@ const dogeWalletPlugin = {
 
       const txid = broadcastResult.txid === "already-broadcast" ? signResult.txid : broadcastResult.txid;
 
+      // Optimistically add change output so balance is immediately correct
+      const changeOutput = txResult.outputs.find((o) => o.isChange && o.amount > 0);
+      if (changeOutput) {
+        const changeVout = txResult.outputs.indexOf(changeOutput);
+        await utxoManager.addUtxo({
+          txid,
+          vout: changeVout,
+          address: changeOutput.address,
+          scriptPubKey: "",
+          amount: changeOutput.amount,
+          confirmations: 0,
+          locked: false,
+        });
+      }
+
       limitTracker.recordSpend(amountKoinu + txResult.fee);
       txTracker.track(txid, { to, amount: amountKoinu, fee: txResult.fee });
       await auditLog.logSend(txid, to, amountKoinu, txResult.fee, tier, "broadcast", reason);

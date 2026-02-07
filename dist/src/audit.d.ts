@@ -29,7 +29,7 @@ export declare class AuditLog {
     logPolicyCheck(amountKoinu: number, tier: string, action: string, reason?: string): Promise<AuditEntry>;
     /** Log a freeze/unfreeze event */
     logFreeze(frozen: boolean, by: string): Promise<AuditEntry>;
-    /** Log a receive transaction */
+    /** Log a receive transaction (deduplicated by txid) */
     logReceive(txid: string, fromAddress: string, amountKoinu: number, confirmations: number): Promise<AuditEntry>;
     /** Get recent send transactions for history display */
     getSendHistory(limit?: number): Promise<AuditEntry[]>;

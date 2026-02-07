@@ -128,8 +128,14 @@ export class AuditLog {
             initiatedBy: by === "owner" ? "owner" : "system",
         });
     }
-    /** Log a receive transaction */
+    /** Log a receive transaction (deduplicated by txid) */
     async logReceive(txid, fromAddress, amountKoinu, confirmations) {
+        // Deduplicate: skip if this txid was already logged as a receive
+        const existing = await this.getAuditLog(1000);
+        if (existing.some((e) => e.action === "receive" && e.txid === txid)) {
+            this.log("info", `doge-wallet: audit: receive ${txid} already logged — skipping duplicate`);
+            return existing.find((e) => e.action === "receive" && e.txid === txid);
+        }
         return this.logAudit({
             action: "receive",
             txid,
