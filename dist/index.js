@@ -1181,6 +1181,19 @@ const dogeWalletPlugin = {
                     text += "\n🧊 Status: FROZEN";
                 }
                 text += "\n\nPrivate key loaded. Much decrypt. Wow. 🐕";
+                // Signal other plugins that the wallet is now unlocked.
+                // Write a trigger file that Brain (or others) can watch for.
+                try {
+                    const triggerDir = `${process.env.HOME || "/home/clawdbot"}/.openclaw/events`;
+                    const { mkdirSync, writeFileSync } = await import("node:fs");
+                    mkdirSync(triggerDir, { recursive: true });
+                    writeFileSync(`${triggerDir}/wallet-unlocked`, JSON.stringify({
+                        event: "wallet:unlocked",
+                        address,
+                        timestamp: new Date().toISOString(),
+                    }));
+                }
+                catch { /* non-fatal */ }
                 return { text };
             }
             catch (err) {
