@@ -163,6 +163,12 @@ const dogeWalletPlugin = {
         // Wallet Manager
         // ------------------------------------------------------------------
         const walletManager = new WalletManager(resolvedDataDir, cfg.network, log);
+        // Configure auto-lock from security settings
+        const autoLockMs = cfg.security?.autoLockMs ?? 300_000; // default 5 min
+        walletManager.setAutoLockMs(autoLockMs);
+        log("info", autoLockMs > 0
+            ? `doge-wallet: auto-lock configured — ${autoLockMs / 1000}s after last use`
+            : "doge-wallet: auto-lock disabled (autoLockMs = 0)");
         // ------------------------------------------------------------------
         // Onboarding Flow (Phase 7)
         // ------------------------------------------------------------------
@@ -1187,13 +1193,17 @@ const dogeWalletPlugin = {
                     const triggerDir = `${process.env.HOME || "/home/clawdbot"}/.openclaw/events`;
                     const { mkdirSync, writeFileSync } = await import("node:fs");
                     mkdirSync(triggerDir, { recursive: true });
-                    writeFileSync(`${triggerDir}/wallet-unlocked`, JSON.stringify({
+                    const payload = JSON.stringify({
                         event: "wallet:unlocked",
                         address,
                         timestamp: new Date().toISOString(),
-                    }));
+                    });
+                    writeFileSync(`${triggerDir}/wallet-unlocked`, payload);
+                    log("info", `doge-wallet: wrote wallet-unlocked event file to ${triggerDir}/wallet-unlocked`);
                 }
-                catch { /* non-fatal */ }
+                catch (evtErr) {
+                    log("error", `doge-wallet: failed to write wallet-unlocked event: ${evtErr?.message ?? evtErr}`);
+                }
                 return { text };
             }
             catch (err) {

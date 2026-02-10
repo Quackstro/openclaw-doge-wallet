@@ -47,7 +47,7 @@ const DEFAULTS = {
         freeze: false,
     },
     utxo: {
-        refreshIntervalSeconds: 180,
+        refreshIntervalSeconds: 600,
         dustThreshold: 100000,
         consolidationThreshold: 50,
         minConfirmations: 1,
@@ -65,6 +65,9 @@ const DEFAULTS = {
         strategy: "medium",
         maxFeePerKb: 200000000,
         fallbackFeePerKb: 100000000,
+    },
+    security: {
+        autoLockMs: 300_000, // 5 minutes — auto-lock wallet after unlock. 0 = never auto-lock.
     },
 };
 /**

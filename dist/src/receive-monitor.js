@@ -15,7 +15,7 @@ import { koinuToDoge } from "./types.js";
 // ============================================================================
 // Constants
 // ============================================================================
-const DEFAULT_POLL_INTERVAL_MS = 60_000; // 60 seconds — balanced for free-tier API quotas
+const DEFAULT_POLL_INTERVAL_MS = 300_000; // 5 minutes — reduced to stay within free-tier API quotas
 const MAX_SEEN_TXIDS = 500; // Prevent unbounded growth
 // ============================================================================
 // ReceiveMonitor
