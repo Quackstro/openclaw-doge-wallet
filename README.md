@@ -51,7 +51,8 @@ openclaw gateway restart
 - **Spending Policy** — Tiered auto-approval, rate limits, daily caps, address allowlist/denylist
 - **Agent-to-Agent Payments** — Invoice system with OP_RETURN verification for AI-to-AI transactions
 - **Notifications** — Telegram alerts for sends, receives, approvals, low balance
-- **Receive Monitor** — Polls for incoming transactions every 30 seconds (configurable, ~17% of free-tier BlockCypher quota)
+- **Receive Monitor** — Polls for incoming transactions every 5 minutes (configurable, optimized for BlockCypher free tier)
+- **Auto-Lock** — Wallet automatically locks after 5 minutes of inactivity (configurable via `security.autoLockMs`)
 - **Guided Onboarding** — Step-by-step wallet setup with backup verification via Telegram
 - **Security Hardened** — Rate limiting, input sanitization, preflight checks, mnemonic never stored in session history
 
@@ -208,6 +209,9 @@ Full config with defaults:
     "allowlist": [],
     "denylist": []
   },
+  "security": {
+    "autoLockMs": 300000
+  },
   "utxo": {
     "refreshIntervalSeconds": 600,
     "dustThreshold": 100000,
@@ -243,6 +247,25 @@ Payments include an `OP_RETURN` output with `OC:<invoiceId>` for trustless on-ch
 ---
 
 ## Security
+
+### Auto-Lock
+The wallet automatically locks after a period of inactivity, clearing the private key from memory. This protects against scenarios where you unlock the wallet and forget to lock it manually.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `security.autoLockMs` | `300000` (5 min) | Time in ms before auto-lock. Set to `0` to disable. |
+
+The timer resets on each wallet operation (send, balance check, etc.). When the wallet auto-locks, you'll need to unlock it again before sending.
+
+### API Rate Limits (BlockCypher Free Tier)
+The BlockCypher free tier allows ~200 requests/day. The default polling rates are tuned to stay well within this limit:
+
+| Poller | Interval | Requests/Day |
+|--------|----------|-------------|
+| Receive monitor | 5 min | ~288 |
+| UTXO refresh | 10 min | ~144 |
+
+With both active, you'll use ~288 + 144 = ~432 requests/day if running 24/7. Since receive monitoring only polls when the wallet is active, actual usage is typically well under the limit. If you have a BlockCypher API token, the limit increases to 2,000 req/hr.
 
 ### Key Storage
 - Private keys encrypted with AES-256-GCM + scrypt KDF (N=131072, r=8, p=1)
