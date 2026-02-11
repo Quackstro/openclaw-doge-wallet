@@ -59,7 +59,7 @@ function handleWalletHistory(entries, args) {
   if (hasMore) {
     buttons.push({ text: "📜 Show More", callback_data: `/history ${offset + PAGE_SIZE}` });
   }
-  buttons.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
+  buttons.push({ text: "🔍 Search", callback_data: "/txsearch" });
 
   const result = { text };
   if (buttons.length > 0) {
@@ -208,7 +208,7 @@ describe("callback routing", () => {
   });
 
   it("Search callback still uses wallet:history:search (needs LLM)", () => {
-    assert.equal("wallet:history:search", "wallet:history:search");
+    assert.equal("/txsearch", "/txsearch");
   });
 
   it("Show More and Search use different routing strategies", () => {
@@ -216,7 +216,7 @@ describe("callback routing", () => {
     const showMore = "/history 5";
     assert.ok(showMore.startsWith("/history"));
     // Search → wallet:history:search (agent handles via LLM)
-    const search = "wallet:history:search";
+    const search = "/txsearch";
     assert.ok(!search.startsWith("/history"));
   });
 });

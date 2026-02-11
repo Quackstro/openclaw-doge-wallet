@@ -916,6 +916,25 @@ const dogeWalletPlugin = {
             },
         });
         // ------------------------------------------------------------------
+        // Auto-reply command: /txsearch — prompt for transaction search
+        // ------------------------------------------------------------------
+        api.registerCommand({
+            name: "txsearch",
+            description: "🔍 Search transactions by natural language query",
+            acceptsArgs: false,
+            handler: async () => {
+                return {
+                    text: "🔍 *Search Transactions*\n\n" +
+                        "Describe what you're looking for and I'll find it:\n\n" +
+                        '• "payments to Castro last week"\n' +
+                        '• "transactions over 10 DOGE"\n' +
+                        '• "all received transactions"\n' +
+                        '• "fees paid this month"\n\n' +
+                        "Just type your query below 👇",
+                };
+            },
+        });
+        // ------------------------------------------------------------------
         // Helper: Format onboarding flow result for Telegram
         // ------------------------------------------------------------------
         function formatOnboardingResult(flowResult) {
@@ -996,33 +1015,6 @@ const dogeWalletPlugin = {
                             text: `💤 Low balance alert snoozed for ${label}.`,
                         };
                     }
-                }
-                return { text: "Unknown action." };
-            },
-        });
-        // ------------------------------------------------------------------
-        // Callback Handler: History pagination inline buttons
-        // ------------------------------------------------------------------
-        api.registerCallbackHandler?.({
-            pattern: /^wallet:history:/,
-            handler: async (ctx) => {
-                const callbackData = ctx.callbackData ?? ctx.data ?? "";
-                // wallet:history:more:<offset>
-                if (callbackData.startsWith("wallet:history:more:")) {
-                    const offset = parseInt(callbackData.split(":").pop() ?? "0", 10);
-                    return await handleWalletHistory(String(offset));
-                }
-                // wallet:history:search
-                if (callbackData === "wallet:history:search") {
-                    return {
-                        text: "🔍 *Search Transactions*\n\n" +
-                            "Describe what you're looking for and I'll find it:\n\n" +
-                            '• "payments to Castro last week"\n' +
-                            '• "transactions over 10 DOGE"\n' +
-                            '• "all received transactions"\n' +
-                            '• "fees paid this month"\n\n' +
-                            "Just type your query below 👇",
-                    };
                 }
                 return { text: "Unknown action." };
             },
@@ -1346,7 +1338,7 @@ const dogeWalletPlugin = {
             if (hasMore) {
                 row.push({ text: "📜 Show More", callback_data: `/history ${offset + PAGE_SIZE}` });
             }
-            row.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
+            row.push({ text: "🔍 Search", callback_data: "/txsearch" });
             buttons.push(row);
             const result = { text };
             if (buttons.length > 0) {
