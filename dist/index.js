@@ -890,7 +890,7 @@ const dogeWalletPlugin = {
                     }
                     case "utxos": return await handleWalletUtxos();
                     case "pending": return handleWalletPending();
-                    case "history": return await handleWalletHistory();
+                    case "history": return await handleWalletHistory(subArgs);
                     case "freeze": return await handleWalletFreeze();
                     case "unfreeze": return await handleWalletUnfreeze();
                     case "export": {
@@ -907,6 +907,18 @@ const dogeWalletPlugin = {
                                 "Try /wallet help for available commands.",
                         };
                 }
+            },
+        });
+        // ------------------------------------------------------------------
+        // Auto-reply command: /history — paginated transaction history
+        // ------------------------------------------------------------------
+        api.registerCommand({
+            name: "history",
+            description: "🐕 Paginated transaction history with inline buttons",
+            acceptsArgs: true,
+            handler: async (ctx) => {
+                const args = ctx.args?.trim() ?? "";
+                return await handleWalletHistory(args);
             },
         });
         // ------------------------------------------------------------------
@@ -990,6 +1002,33 @@ const dogeWalletPlugin = {
                             text: `💤 Low balance alert snoozed for ${label}.`,
                         };
                     }
+                }
+                return { text: "Unknown action." };
+            },
+        });
+        // ------------------------------------------------------------------
+        // Callback Handler: History pagination inline buttons
+        // ------------------------------------------------------------------
+        api.registerCallbackHandler?.({
+            pattern: /^wallet:history:/,
+            handler: async (ctx) => {
+                const callbackData = ctx.callbackData ?? ctx.data ?? "";
+                // wallet:history:more:<offset>
+                if (callbackData.startsWith("wallet:history:more:")) {
+                    const offset = parseInt(callbackData.split(":").pop() ?? "0", 10);
+                    return await handleWalletHistory(String(offset));
+                }
+                // wallet:history:search
+                if (callbackData === "wallet:history:search") {
+                    return {
+                        text: "🔍 *Search Transactions*\n\n" +
+                            "Describe what you're looking for and I'll find it:\n\n" +
+                            '• "payments to Castro last week"\n' +
+                            '• "transactions over 10 DOGE"\n' +
+                            '• "all received transactions"\n' +
+                            '• "fees paid this month"\n\n' +
+                            "Just type your query below 👇",
+                    };
                 }
                 return { text: "Unknown action." };
             },
@@ -1279,32 +1318,45 @@ const dogeWalletPlugin = {
             text += "\nUse /wallet approve <id> or /wallet deny <id>.";
             return { text };
         }
-        async function handleWalletHistory() {
-            const entries = await auditLog.getFullHistory(20);
+        async function handleWalletHistory(args) {
+            const PAGE_SIZE = 5;
+            const offset = Math.max(0, parseInt(args, 10) || 0);
+            const entries = await auditLog.getFullHistory(offset + PAGE_SIZE + 1);
             if (entries.length === 0) {
                 return { text: "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\nNo transactions yet. 🐕" };
             }
-            let text = "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\n";
-            for (const e of entries.slice(0, 15)) {
+            const page = Math.floor(offset / PAGE_SIZE) + 1;
+            const pageEntries = entries.slice(offset, offset + PAGE_SIZE);
+            const hasMore = entries.length > offset + PAGE_SIZE;
+            let text = `💰 Transaction History (page ${page})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+            for (const e of pageEntries) {
                 const amountDoge = e.amount ? koinuToDoge(e.amount) : 0;
                 const ts = formatET(e.timestamp);
                 if (e.action === "receive") {
                     text +=
                         `\n➕ ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
-                            `  ${ts}\n` +
-                            `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+                            `    ${ts} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
                 }
                 else {
                     const feeDoge = e.fee ? koinuToDoge(e.fee) : 0;
                     text +=
                         `\n➖ ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
-                            `  ⛽ ${formatDoge(feeDoge)} fee | ${e.tier ?? "?"} | ${ts}\n` +
-                            `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+                            `    ${ts} · ⛽ ${formatDoge(feeDoge)} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
                 }
             }
-            if (entries.length > 15)
-                text += `\n… and ${entries.length - 15} more.`;
-            return { text };
+            // Build inline buttons
+            const buttons = [];
+            if (hasMore) {
+                buttons.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
+            }
+            buttons.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
+            const result = { text };
+            if (buttons.length > 0) {
+                result.replyMarkup = {
+                    inline_keyboard: [buttons],
+                };
+            }
+            return result;
         }
         async function handleWalletFreeze() {
             policyEngine.freeze();

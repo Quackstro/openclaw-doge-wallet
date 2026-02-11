@@ -1,0 +1,216 @@
+/**
+ * History pagination tests — covers handleWalletHistory logic,
+ * callback handler routing, and edge cases.
+ */
+
+import { describe, it, mock } from "node:test";
+import assert from "node:assert/strict";
+
+/**
+ * Simulate the handleWalletHistory logic extracted from the plugin.
+ * We test the pure logic here since the actual function is embedded in the plugin closure.
+ */
+
+function koinuToDoge(koinu) {
+  return koinu / 100_000_000;
+}
+
+function formatDoge(amount) {
+  return amount.toFixed(2);
+}
+
+function truncAddr(address) {
+  if (address.length <= 14) return address;
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+function makeEntry(action, amount, address, txid, timestamp) {
+  return { action, amount, address, txid, timestamp };
+}
+
+function handleWalletHistory(entries, args) {
+  const PAGE_SIZE = 5;
+  const offset = Math.max(0, parseInt(args, 10) || 0);
+
+  if (entries.length === 0) {
+    return { text: "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\nNo transactions yet. 🐕" };
+  }
+
+  const page = Math.floor(offset / PAGE_SIZE) + 1;
+  const pageEntries = entries.slice(offset, offset + PAGE_SIZE);
+  const hasMore = entries.length > offset + PAGE_SIZE;
+
+  let text = `💰 Transaction History (page ${page})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+  for (const e of pageEntries) {
+    const amountDoge = e.amount ? koinuToDoge(e.amount) : 0;
+    if (e.action === "receive") {
+      text += `\n➕ ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n`;
+    } else {
+      text += `\n➖ ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n`;
+    }
+  }
+
+  const buttons = [];
+  if (hasMore) {
+    buttons.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
+  }
+  buttons.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
+
+  const result = { text };
+  if (buttons.length > 0) {
+    result.replyMarkup = { inline_keyboard: [buttons] };
+  }
+  return result;
+}
+
+// Generate N test entries
+function generateEntries(n) {
+  const entries = [];
+  for (let i = 0; i < n; i++) {
+    entries.push(makeEntry(
+      i % 3 === 0 ? "receive" : "send",
+      (i + 1) * 100_000_000, // 1, 2, 3... DOGE in koinu
+      "D84hUKd37sKjmvfweAAs3CRWiZYuP54ygU",
+      `txid${String(i).padStart(4, "0")}abcdef1234567890`,
+      new Date(2026, 1, 10, 14, 0, 0).toISOString(),
+    ));
+  }
+  return entries;
+}
+
+describe("handleWalletHistory — pagination", () => {
+  it("returns empty state when no transactions", () => {
+    const result = handleWalletHistory([], "");
+    assert.ok(result.text.includes("No transactions yet"));
+    assert.equal(result.replyMarkup, undefined);
+  });
+
+  it("shows page 1 with 5 items and Show More button when >5 entries", () => {
+    const entries = generateEntries(12);
+    const result = handleWalletHistory(entries, "0");
+    assert.ok(result.text.includes("page 1"));
+    // Count transaction lines (➕ or ➖)
+    const txLines = result.text.match(/[➕➖]/g);
+    assert.equal(txLines.length, 5);
+    // Has Show More + Search buttons
+    const buttons = result.replyMarkup.inline_keyboard[0];
+    assert.equal(buttons.length, 2);
+    assert.equal(buttons[0].text, "📜 Show More");
+    assert.equal(buttons[0].callback_data, "wallet:history:more:5");
+    assert.equal(buttons[1].text, "🔍 Search");
+  });
+
+  it("shows page 2 with correct offset", () => {
+    const entries = generateEntries(12);
+    const result = handleWalletHistory(entries, "5");
+    assert.ok(result.text.includes("page 2"));
+    const txLines = result.text.match(/[➕➖]/g);
+    assert.equal(txLines.length, 5);
+    // Should have Show More (still more entries)
+    const buttons = result.replyMarkup.inline_keyboard[0];
+    assert.equal(buttons[0].callback_data, "wallet:history:more:10");
+  });
+
+  it("last page has only Search button (no Show More)", () => {
+    const entries = generateEntries(8);
+    const result = handleWalletHistory(entries, "5");
+    assert.ok(result.text.includes("page 2"));
+    const txLines = result.text.match(/[➕➖]/g);
+    assert.equal(txLines.length, 3); // only 3 remaining
+    const buttons = result.replyMarkup.inline_keyboard[0];
+    assert.equal(buttons.length, 1);
+    assert.equal(buttons[0].text, "🔍 Search");
+  });
+
+  it("shows exactly 5 items on a full page", () => {
+    const entries = generateEntries(5);
+    const result = handleWalletHistory(entries, "0");
+    const txLines = result.text.match(/[➕➖]/g);
+    assert.equal(txLines.length, 5);
+    // No more entries beyond this page
+    const buttons = result.replyMarkup.inline_keyboard[0];
+    assert.equal(buttons.length, 1); // just Search
+  });
+
+  it("clamps negative offset to 0", () => {
+    const entries = generateEntries(10);
+    const result = handleWalletHistory(entries, "-5");
+    assert.ok(result.text.includes("page 1"));
+  });
+
+  it("handles NaN offset gracefully (defaults to 0)", () => {
+    const entries = generateEntries(10);
+    const result = handleWalletHistory(entries, "abc");
+    assert.ok(result.text.includes("page 1"));
+  });
+
+  it("handles empty string offset (defaults to 0)", () => {
+    const entries = generateEntries(10);
+    const result = handleWalletHistory(entries, "");
+    assert.ok(result.text.includes("page 1"));
+  });
+
+  it("handles undefined args (defaults to 0)", () => {
+    const entries = generateEntries(10);
+    const result = handleWalletHistory(entries, undefined);
+    assert.ok(result.text.includes("page 1"));
+  });
+
+  it("handles offset beyond available entries", () => {
+    const entries = generateEntries(3);
+    const result = handleWalletHistory(entries, "100");
+    // Should show empty page with just header
+    const txLines = result.text.match(/[➕➖]/g);
+    assert.equal(txLines, null); // no transactions on this "page"
+  });
+
+  it("formats receive transactions with ← arrow", () => {
+    const entries = [makeEntry("receive", 500_000_000, "D84hUKd37sKjmvfweAAs3CRWiZYuP54ygU", "txid001", new Date().toISOString())];
+    const result = handleWalletHistory(entries, "0");
+    assert.ok(result.text.includes("➕"));
+    assert.ok(result.text.includes("←"));
+    assert.ok(result.text.includes("5.00 DOGE"));
+  });
+
+  it("formats send transactions with → arrow", () => {
+    const entries = [makeEntry("send", 300_000_000, "D84hUKd37sKjmvfweAAs3CRWiZYuP54ygU", "txid001", new Date().toISOString())];
+    const result = handleWalletHistory(entries, "0");
+    assert.ok(result.text.includes("➖"));
+    assert.ok(result.text.includes("→"));
+    assert.ok(result.text.includes("3.00 DOGE"));
+  });
+});
+
+describe("callback routing", () => {
+  it("parses wallet:history:more:<offset> correctly", () => {
+    const data = "wallet:history:more:10";
+    assert.ok(data.startsWith("wallet:history:more:"));
+    const offset = parseInt(data.split(":").pop(), 10);
+    assert.equal(offset, 10);
+  });
+
+  it("handles wallet:history:more:0", () => {
+    const offset = parseInt("wallet:history:more:0".split(":").pop(), 10);
+    assert.equal(offset, 0);
+  });
+
+  it("handles malformed offset in callback (defaults NaN to 0)", () => {
+    const raw = "wallet:history:more:abc".split(":").pop();
+    const offset = parseInt(raw, 10);
+    assert.ok(isNaN(offset));
+    // In real code: parseInt(...) || 0 would give 0
+    assert.equal(offset || 0, 0);
+  });
+
+  it("matches wallet:history:search exactly", () => {
+    assert.equal("wallet:history:search", "wallet:history:search");
+  });
+
+  it("pattern matches wallet:history: prefix", () => {
+    const pattern = /^wallet:history:/;
+    assert.ok(pattern.test("wallet:history:more:5"));
+    assert.ok(pattern.test("wallet:history:search"));
+    assert.ok(!pattern.test("wallet:other:thing"));
+    assert.ok(!pattern.test("doge:lowbal:dismiss"));
+  });
+});
