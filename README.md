@@ -50,6 +50,7 @@ openclaw gateway restart
 - **Multi-Provider Failover** — P2P → BlockCypher → SoChain → Blockchair
 - **Spending Policy** — Tiered auto-approval, rate limits, daily caps, address allowlist/denylist
 - **Agent-to-Agent Payments** — Invoice system with OP_RETURN verification for AI-to-AI transactions
+- **Paginated History** — `/history` shows 5 transactions per page with inline buttons (Show More + Search), zero LLM cost
 - **Notifications** — Telegram alerts for sends, receives, approvals, low balance
 - **Receive Monitor** — Polls for incoming transactions every 5 minutes (configurable, optimized for BlockCypher free tier)
 - **Auto-Lock** — Wallet automatically locks after 5 minutes of inactivity (configurable via `security.autoLockMs`)
@@ -107,7 +108,9 @@ Send DOGE to your new address. You'll get a Telegram notification when it arrive
 | `/wallet balance` | Check current balance |
 | `/wallet send <amount> to <address>` | Send DOGE |
 | `/wallet address` | Show receiving address |
-| `/wallet history` | Recent transactions |
+| `/wallet history` | Paginated transaction history (5 per page, inline buttons) |
+| `/history` | Shortcut for `/wallet history` |
+| `/txsearch` | Search transactions by natural language query |
 | `/wallet utxos` | UTXO details |
 | `/wallet lock` | Lock wallet (clears private key from memory) |
 | `/wallet unlock <passphrase>` | Unlock wallet for sending |
