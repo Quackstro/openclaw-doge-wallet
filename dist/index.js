@@ -163,12 +163,6 @@ const dogeWalletPlugin = {
         // Wallet Manager
         // ------------------------------------------------------------------
         const walletManager = new WalletManager(resolvedDataDir, cfg.network, log);
-        // Configure auto-lock from security settings
-        const autoLockMs = cfg.security?.autoLockMs ?? 300_000; // default 5 min
-        walletManager.setAutoLockMs(autoLockMs);
-        log("info", autoLockMs > 0
-            ? `doge-wallet: auto-lock configured — ${autoLockMs / 1000}s after last use`
-            : "doge-wallet: auto-lock disabled (autoLockMs = 0)");
         // ------------------------------------------------------------------
         // Onboarding Flow (Phase 7)
         // ------------------------------------------------------------------
@@ -890,7 +884,7 @@ const dogeWalletPlugin = {
                     }
                     case "utxos": return await handleWalletUtxos();
                     case "pending": return handleWalletPending();
-                    case "history": return await handleWalletHistory();
+                    case "history": return await handleWalletHistory(subArgs);
                     case "freeze": return await handleWalletFreeze();
                     case "unfreeze": return await handleWalletUnfreeze();
                     case "export": {
@@ -907,6 +901,37 @@ const dogeWalletPlugin = {
                                 "Try /wallet help for available commands.",
                         };
                 }
+            },
+        });
+        // ------------------------------------------------------------------
+        // Auto-reply command: /history — paginated transaction history
+        // ------------------------------------------------------------------
+        api.registerCommand({
+            name: "history",
+            description: "🐕 Paginated transaction history with inline buttons",
+            acceptsArgs: true,
+            handler: async (ctx) => {
+                const args = ctx.args?.trim() ?? "";
+                return await handleWalletHistory(args);
+            },
+        });
+        // ------------------------------------------------------------------
+        // Auto-reply command: /txsearch — prompt for transaction search
+        // ------------------------------------------------------------------
+        api.registerCommand({
+            name: "txsearch",
+            description: "🔍 Search transactions by natural language query",
+            acceptsArgs: false,
+            handler: async () => {
+                return {
+                    text: "🔍 *Search Transactions*\n\n" +
+                        "Describe what you're looking for and I'll find it:\n\n" +
+                        '• "payments to Castro last week"\n' +
+                        '• "transactions over 10 DOGE"\n' +
+                        '• "all received transactions"\n' +
+                        '• "fees paid this month"\n\n' +
+                        "Just type your query below 👇",
+                };
             },
         });
         // ------------------------------------------------------------------
@@ -1193,17 +1218,13 @@ const dogeWalletPlugin = {
                     const triggerDir = `${process.env.HOME || "/home/clawdbot"}/.openclaw/events`;
                     const { mkdirSync, writeFileSync } = await import("node:fs");
                     mkdirSync(triggerDir, { recursive: true });
-                    const payload = JSON.stringify({
+                    writeFileSync(`${triggerDir}/wallet-unlocked`, JSON.stringify({
                         event: "wallet:unlocked",
                         address,
                         timestamp: new Date().toISOString(),
-                    });
-                    writeFileSync(`${triggerDir}/wallet-unlocked`, payload);
-                    log("info", `doge-wallet: wrote wallet-unlocked event file to ${triggerDir}/wallet-unlocked`);
+                    }));
                 }
-                catch (evtErr) {
-                    log("error", `doge-wallet: failed to write wallet-unlocked event: ${evtErr?.message ?? evtErr}`);
-                }
+                catch { /* non-fatal */ }
                 return { text };
             }
             catch (err) {
@@ -1279,32 +1300,53 @@ const dogeWalletPlugin = {
             text += "\nUse /wallet approve <id> or /wallet deny <id>.";
             return { text };
         }
-        async function handleWalletHistory() {
-            const entries = await auditLog.getFullHistory(20);
-            if (entries.length === 0) {
+        async function handleWalletHistory(args) {
+            const PAGE_SIZE = 5;
+            let offset = Math.max(0, parseInt(args ?? "", 10) || 0);
+            // Fetch enough to detect "has more" — we need offset + PAGE_SIZE + 1
+            // But first get total count to clamp offset
+            const allEntries = await auditLog.getFullHistory(offset + PAGE_SIZE + 1);
+            if (allEntries.length === 0) {
                 return { text: "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\nNo transactions yet. 🐕" };
             }
-            let text = "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\n";
-            for (const e of entries.slice(0, 15)) {
+            // Clamp offset: if beyond available entries, reset to last valid page
+            if (offset >= allEntries.length) {
+                offset = Math.max(0, Math.floor((allEntries.length - 1) / PAGE_SIZE) * PAGE_SIZE);
+            }
+            const page = Math.floor(offset / PAGE_SIZE) + 1;
+            const pageEntries = allEntries.slice(offset, offset + PAGE_SIZE);
+            const hasMore = allEntries.length > offset + PAGE_SIZE;
+            let text = `💰 Transaction History (page ${page})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+            for (const e of pageEntries) {
                 const amountDoge = e.amount ? koinuToDoge(e.amount) : 0;
                 const ts = formatET(e.timestamp);
                 if (e.action === "receive") {
                     text +=
                         `\n➕ ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
-                            `  ${ts}\n` +
-                            `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+                            `    ${ts} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
                 }
                 else {
                     const feeDoge = e.fee ? koinuToDoge(e.fee) : 0;
                     text +=
                         `\n➖ ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
-                            `  ⛽ ${formatDoge(feeDoge)} fee | ${e.tier ?? "?"} | ${ts}\n` +
-                            `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+                            `    ${ts} · ⛽ ${formatDoge(feeDoge)} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
                 }
             }
-            if (entries.length > 15)
-                text += `\n… and ${entries.length - 15} more.`;
-            return { text };
+            // Build inline buttons — OpenClaw reads buttons from channelData.telegram.buttons
+            const buttons = [];
+            const row = [];
+            if (hasMore) {
+                row.push({ text: "📜 Show More", callback_data: `/history ${offset + PAGE_SIZE}` });
+            }
+            row.push({ text: "🔍 Search", callback_data: "/txsearch" });
+            buttons.push(row);
+            const result = { text };
+            if (buttons.length > 0) {
+                result.channelData = {
+                    telegram: { buttons },
+                };
+            }
+            return result;
         }
         async function handleWalletFreeze() {
             policyEngine.freeze();
