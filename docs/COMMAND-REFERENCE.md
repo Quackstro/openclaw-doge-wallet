@@ -69,29 +69,48 @@ Show individual unspent transaction outputs.
 Total: 116.15 DOGE | 0 locked
 ```
 
-### `/wallet history`
-Recent sends and receives.
+### `/wallet history` or `/history`
+Paginated transaction history — shows 5 transactions per page with inline buttons.
 
 ```
-🐕 Transaction History
+💰 Transaction History (page 1)
 ━━━━━━━━━━━━━━━━━━━━━━
 
-➖ 5.00 DOGE → D6i8Te…ncat
-  ⛽ 0.23 fee | micro | Feb 7, 9:10 AM
-  🔗 5e53bbbfbc20a35b…
+➖ 5.00 DOGE → D84hUK…4ygU
+    Feb 10, 2:58 PM · ⛽ 0.10 · 🔗 065aab8d…
 
-➖ 3.00 DOGE → D6i8Te…ncat
-  ⛽ 0.23 fee | micro | Feb 7, 9:04 AM
-  🔗 3b757048560ce535…
+➖ 1.00 DOGE → D84hUK…4ygU
+    Feb 10, 11:49 AM · ⛽ 0.37 · 🔗 ca9b8e4f…
 
-➕ 10.14 DOGE ← D6i8Te…ncat
-  Feb 6, 9:53 PM
-  🔗 54f9bb9add9bfeed…
+➕ 100.40 DOGE ← D78TRc…fit3
+    Feb 6, 9:53 PM · 🔗 54f9bb9a…
 
 ➖ 1.00 DOGE → D6i8Te…ncat
-  ⛽ 0.23 fee | micro | Feb 7, 8:22 AM
-  🔗 db77d0493b6a2f2f…
+    Feb 5, 4:00 PM · ⛽ 0.11 · 🔗 db77d049…
+
+➖ 1.00 DOGE → DN2c79…HQBC
+    Feb 5, 7:57 PM · ⛽ 0.23 · 🔗 3b757048…
+
+[📜 Show More]  [🔍 Search]
 ```
+
+**Inline buttons:**
+- **📜 Show More** — loads the next 5 transactions (handled as `/history <offset>` auto-reply, zero LLM cost)
+- **🔍 Search** — prompts for natural language search (handled as `/txsearch` auto-reply, LLM only processes the actual query)
+
+**Edge cases:**
+- Offset beyond available entries → clamps to last valid page
+- Negative or invalid offset → defaults to page 1
+- Last page shows only the 🔍 Search button
+
+### `/txsearch`
+Prompts for a natural language transaction search. The agent uses `wallet_history` to fetch all transactions and filters/summarizes based on your query.
+
+Example queries:
+- "fees paid this month"
+- "transactions over 10 DOGE"
+- "all received transactions"
+- "payments to Castro last week"
 
 ---
 
@@ -310,7 +329,9 @@ Show all available commands.
   /wallet balance — Check wallet balance
   /wallet address — Show receiving address
   /wallet utxos — UTXO details
-  /wallet history — Recent transactions
+  /wallet history — Paginated transaction history
+  /history — Shortcut for /wallet history
+  /txsearch — Search transactions by natural language
   /wallet export [N] — Export audit trail (last N entries)
 
 💸 Sending:
