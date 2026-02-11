@@ -1340,16 +1340,18 @@ const dogeWalletPlugin = {
                             `    ${ts} · ⛽ ${formatDoge(feeDoge)} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
                 }
             }
-            // Build inline buttons
+            // Build inline buttons — OpenClaw reads buttons from channelData.telegram.buttons
             const buttons = [];
+            const row = [];
             if (hasMore) {
-                buttons.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
+                row.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
             }
-            buttons.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
+            row.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
+            buttons.push(row);
             const result = { text };
             if (buttons.length > 0) {
-                result.replyMarkup = {
-                    inline_keyboard: [buttons],
+                result.channelData = {
+                    telegram: { buttons },
                 };
             }
             return result;

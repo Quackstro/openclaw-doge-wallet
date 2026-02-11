@@ -1567,7 +1567,7 @@ const dogeWalletPlugin = {
       return { text };
     }
 
-    async function handleWalletHistory(args?: string): Promise<{ text: string; replyMarkup?: any }> {
+    async function handleWalletHistory(args?: string): Promise<{ text: string; channelData?: any }> {
       const PAGE_SIZE = 5;
       let offset = Math.max(0, parseInt(args ?? "", 10) || 0);
 
@@ -1605,17 +1605,19 @@ const dogeWalletPlugin = {
         }
       }
 
-      // Build inline buttons
-      const buttons: Array<{ text: string; callback_data: string }> = [];
+      // Build inline buttons — OpenClaw reads buttons from channelData.telegram.buttons
+      const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+      const row: Array<{ text: string; callback_data: string }> = [];
       if (hasMore) {
-        buttons.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
+        row.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
       }
-      buttons.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
+      row.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
+      buttons.push(row);
 
-      const result: { text: string; replyMarkup?: any } = { text };
+      const result: { text: string; channelData?: any } = { text };
       if (buttons.length > 0) {
-        result.replyMarkup = {
-          inline_keyboard: [buttons],
+        result.channelData = {
+          telegram: { buttons },
         };
       }
 

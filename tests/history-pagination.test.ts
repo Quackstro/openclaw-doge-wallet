@@ -63,7 +63,7 @@ function handleWalletHistory(entries, args) {
 
   const result = { text };
   if (buttons.length > 0) {
-    result.replyMarkup = { inline_keyboard: [buttons] };
+    result.channelData = { telegram: { buttons: [buttons] } };
   }
   return result;
 }
@@ -87,7 +87,7 @@ describe("handleWalletHistory — pagination", () => {
   it("returns empty state when no transactions", () => {
     const result = handleWalletHistory([], "");
     assert.ok(result.text.includes("No transactions yet"));
-    assert.equal(result.replyMarkup, undefined);
+    assert.equal(result.channelData, undefined);
   });
 
   it("shows page 1 with 5 items and Show More button when >5 entries", () => {
@@ -98,7 +98,7 @@ describe("handleWalletHistory — pagination", () => {
     const txLines = result.text.match(/[➕➖]/g);
     assert.equal(txLines.length, 5);
     // Has Show More + Search buttons
-    const buttons = result.replyMarkup.inline_keyboard[0];
+    const buttons = result.channelData.telegram.buttons[0];
     assert.equal(buttons.length, 2);
     assert.equal(buttons[0].text, "📜 Show More");
     assert.equal(buttons[0].callback_data, "wallet:history:more:5");
@@ -112,7 +112,7 @@ describe("handleWalletHistory — pagination", () => {
     const txLines = result.text.match(/[➕➖]/g);
     assert.equal(txLines.length, 5);
     // Should have Show More (still more entries)
-    const buttons = result.replyMarkup.inline_keyboard[0];
+    const buttons = result.channelData.telegram.buttons[0];
     assert.equal(buttons[0].callback_data, "wallet:history:more:10");
   });
 
@@ -122,7 +122,7 @@ describe("handleWalletHistory — pagination", () => {
     assert.ok(result.text.includes("page 2"));
     const txLines = result.text.match(/[➕➖]/g);
     assert.equal(txLines.length, 3); // only 3 remaining
-    const buttons = result.replyMarkup.inline_keyboard[0];
+    const buttons = result.channelData.telegram.buttons[0];
     assert.equal(buttons.length, 1);
     assert.equal(buttons[0].text, "🔍 Search");
   });
@@ -133,7 +133,7 @@ describe("handleWalletHistory — pagination", () => {
     const txLines = result.text.match(/[➕➖]/g);
     assert.equal(txLines.length, 5);
     // No more entries beyond this page
-    const buttons = result.replyMarkup.inline_keyboard[0];
+    const buttons = result.channelData.telegram.buttons[0];
     assert.equal(buttons.length, 1); // just Search
   });
 
