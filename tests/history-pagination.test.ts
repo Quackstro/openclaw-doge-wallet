@@ -57,7 +57,7 @@ function handleWalletHistory(entries, args) {
 
   const buttons = [];
   if (hasMore) {
-    buttons.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
+    buttons.push({ text: "📜 Show More", callback_data: `/history ${offset + PAGE_SIZE}` });
   }
   buttons.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
 
@@ -101,7 +101,7 @@ describe("handleWalletHistory — pagination", () => {
     const buttons = result.channelData.telegram.buttons[0];
     assert.equal(buttons.length, 2);
     assert.equal(buttons[0].text, "📜 Show More");
-    assert.equal(buttons[0].callback_data, "wallet:history:more:5");
+    assert.equal(buttons[0].callback_data, "/history 5");
     assert.equal(buttons[1].text, "🔍 Search");
   });
 
@@ -113,7 +113,7 @@ describe("handleWalletHistory — pagination", () => {
     assert.equal(txLines.length, 5);
     // Should have Show More (still more entries)
     const buttons = result.channelData.telegram.buttons[0];
-    assert.equal(buttons[0].callback_data, "wallet:history:more:10");
+    assert.equal(buttons[0].callback_data, "/history 10");
   });
 
   it("last page has only Search button (no Show More)", () => {
@@ -188,35 +188,35 @@ describe("handleWalletHistory — pagination", () => {
 });
 
 describe("callback routing", () => {
-  it("parses wallet:history:more:<offset> correctly", () => {
-    const data = "wallet:history:more:10";
-    assert.ok(data.startsWith("wallet:history:more:"));
-    const offset = parseInt(data.split(":").pop(), 10);
+  it("Show More callback uses /history <offset> format (auto-reply, no LLM)", () => {
+    const data = "/history 10";
+    assert.ok(data.startsWith("/history"));
+    const offset = parseInt(data.split(" ").pop(), 10);
     assert.equal(offset, 10);
   });
 
-  it("handles wallet:history:more:0", () => {
-    const offset = parseInt("wallet:history:more:0".split(":").pop(), 10);
+  it("parses /history 0 correctly", () => {
+    const offset = parseInt("/history 0".split(" ").pop(), 10);
     assert.equal(offset, 0);
   });
 
-  it("handles malformed offset in callback (defaults NaN to 0)", () => {
-    const raw = "wallet:history:more:abc".split(":").pop();
+  it("handles malformed /history arg (defaults NaN to 0)", () => {
+    const raw = "/history abc".split(" ").pop();
     const offset = parseInt(raw, 10);
     assert.ok(isNaN(offset));
-    // In real code: parseInt(...) || 0 would give 0
     assert.equal(offset || 0, 0);
   });
 
-  it("matches wallet:history:search exactly", () => {
+  it("Search callback still uses wallet:history:search (needs LLM)", () => {
     assert.equal("wallet:history:search", "wallet:history:search");
   });
 
-  it("pattern matches wallet:history: prefix", () => {
-    const pattern = /^wallet:history:/;
-    assert.ok(pattern.test("wallet:history:more:5"));
-    assert.ok(pattern.test("wallet:history:search"));
-    assert.ok(!pattern.test("wallet:other:thing"));
-    assert.ok(!pattern.test("doge:lowbal:dismiss"));
+  it("Show More and Search use different routing strategies", () => {
+    // Show More → /history command (auto-reply, free)
+    const showMore = "/history 5";
+    assert.ok(showMore.startsWith("/history"));
+    // Search → wallet:history:search (agent handles via LLM)
+    const search = "wallet:history:search";
+    assert.ok(!search.startsWith("/history"));
   });
 });

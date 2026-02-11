@@ -1344,7 +1344,7 @@ const dogeWalletPlugin = {
             const buttons = [];
             const row = [];
             if (hasMore) {
-                row.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
+                row.push({ text: "📜 Show More", callback_data: `/history ${offset + PAGE_SIZE}` });
             }
             row.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
             buttons.push(row);
