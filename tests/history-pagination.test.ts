@@ -30,10 +30,15 @@ function makeEntry(action, amount, address, txid, timestamp) {
 
 function handleWalletHistory(entries, args) {
   const PAGE_SIZE = 5;
-  const offset = Math.max(0, parseInt(args, 10) || 0);
+  let offset = Math.max(0, parseInt(args, 10) || 0);
 
   if (entries.length === 0) {
     return { text: "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\nNo transactions yet. 🐕" };
+  }
+
+  // Clamp offset: if beyond available entries, reset to last valid page
+  if (offset >= entries.length) {
+    offset = Math.max(0, Math.floor((entries.length - 1) / PAGE_SIZE) * PAGE_SIZE);
   }
 
   const page = Math.floor(offset / PAGE_SIZE) + 1;
@@ -156,12 +161,13 @@ describe("handleWalletHistory — pagination", () => {
     assert.ok(result.text.includes("page 1"));
   });
 
-  it("handles offset beyond available entries", () => {
-    const entries = generateEntries(3);
+  it("clamps offset beyond available entries to last valid page", () => {
+    const entries = generateEntries(8);
     const result = handleWalletHistory(entries, "100");
-    // Should show empty page with just header
+    // Should clamp to last page (offset 5, page 2, showing 3 entries)
+    assert.ok(result.text.includes("page 2"));
     const txLines = result.text.match(/[➕➖]/g);
-    assert.equal(txLines, null); // no transactions on this "page"
+    assert.equal(txLines.length, 3);
   });
 
   it("formats receive transactions with ← arrow", () => {

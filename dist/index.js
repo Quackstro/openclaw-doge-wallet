@@ -163,12 +163,6 @@ const dogeWalletPlugin = {
         // Wallet Manager
         // ------------------------------------------------------------------
         const walletManager = new WalletManager(resolvedDataDir, cfg.network, log);
-        // Configure auto-lock from security settings
-        const autoLockMs = cfg.security?.autoLockMs ?? 300_000; // default 5 min
-        walletManager.setAutoLockMs(autoLockMs);
-        log("info", autoLockMs > 0
-            ? `doge-wallet: auto-lock configured — ${autoLockMs / 1000}s after last use`
-            : "doge-wallet: auto-lock disabled (autoLockMs = 0)");
         // ------------------------------------------------------------------
         // Onboarding Flow (Phase 7)
         // ------------------------------------------------------------------
@@ -1232,17 +1226,13 @@ const dogeWalletPlugin = {
                     const triggerDir = `${process.env.HOME || "/home/clawdbot"}/.openclaw/events`;
                     const { mkdirSync, writeFileSync } = await import("node:fs");
                     mkdirSync(triggerDir, { recursive: true });
-                    const payload = JSON.stringify({
+                    writeFileSync(`${triggerDir}/wallet-unlocked`, JSON.stringify({
                         event: "wallet:unlocked",
                         address,
                         timestamp: new Date().toISOString(),
-                    });
-                    writeFileSync(`${triggerDir}/wallet-unlocked`, payload);
-                    log("info", `doge-wallet: wrote wallet-unlocked event file to ${triggerDir}/wallet-unlocked`);
+                    }));
                 }
-                catch (evtErr) {
-                    log("error", `doge-wallet: failed to write wallet-unlocked event: ${evtErr?.message ?? evtErr}`);
-                }
+                catch { /* non-fatal */ }
                 return { text };
             }
             catch (err) {
@@ -1320,14 +1310,20 @@ const dogeWalletPlugin = {
         }
         async function handleWalletHistory(args) {
             const PAGE_SIZE = 5;
-            const offset = Math.max(0, parseInt(args, 10) || 0);
-            const entries = await auditLog.getFullHistory(offset + PAGE_SIZE + 1);
-            if (entries.length === 0) {
+            let offset = Math.max(0, parseInt(args ?? "", 10) || 0);
+            // Fetch enough to detect "has more" — we need offset + PAGE_SIZE + 1
+            // But first get total count to clamp offset
+            const allEntries = await auditLog.getFullHistory(offset + PAGE_SIZE + 1);
+            if (allEntries.length === 0) {
                 return { text: "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\nNo transactions yet. 🐕" };
             }
+            // Clamp offset: if beyond available entries, reset to last valid page
+            if (offset >= allEntries.length) {
+                offset = Math.max(0, Math.floor((allEntries.length - 1) / PAGE_SIZE) * PAGE_SIZE);
+            }
             const page = Math.floor(offset / PAGE_SIZE) + 1;
-            const pageEntries = entries.slice(offset, offset + PAGE_SIZE);
-            const hasMore = entries.length > offset + PAGE_SIZE;
+            const pageEntries = allEntries.slice(offset, offset + PAGE_SIZE);
+            const hasMore = allEntries.length > offset + PAGE_SIZE;
             let text = `💰 Transaction History (page ${page})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
             for (const e of pageEntries) {
                 const amountDoge = e.amount ? koinuToDoge(e.amount) : 0;

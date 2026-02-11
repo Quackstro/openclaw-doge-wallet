@@ -1073,7 +1073,7 @@ const dogeWalletPlugin = {
           }
           case "utxos":     return await handleWalletUtxos();
           case "pending":   return handleWalletPending();
-          case "history":   return await handleWalletHistory();
+          case "history":   return await handleWalletHistory(subArgs);
           case "freeze":    return await handleWalletFreeze();
           case "unfreeze":  return await handleWalletUnfreeze();
           case "export": {
@@ -1090,6 +1090,19 @@ const dogeWalletPlugin = {
                 "Try /wallet help for available commands.",
             };
         }
+      },
+    });
+
+    // ------------------------------------------------------------------
+    // Auto-reply command: /history — paginated transaction history
+    // ------------------------------------------------------------------
+    api.registerCommand({
+      name: "history",
+      description: "🐕 Paginated transaction history with inline buttons",
+      acceptsArgs: true,
+      handler: async (ctx: CommandContext) => {
+        const args = ctx.args?.trim() ?? "";
+        return await handleWalletHistory(args);
       },
     });
 
@@ -1185,6 +1198,38 @@ const dogeWalletPlugin = {
               text: `💤 Low balance alert snoozed for ${label}.`,
             };
           }
+        }
+
+        return { text: "Unknown action." };
+      },
+    });
+
+    // ------------------------------------------------------------------
+    // Callback Handler: History pagination inline buttons
+    // ------------------------------------------------------------------
+    api.registerCallbackHandler?.({
+      pattern: /^wallet:history:/,
+      handler: async (ctx: CommandContext) => {
+        const callbackData = ctx.callbackData ?? ctx.data ?? "";
+
+        // wallet:history:more:<offset>
+        if (callbackData.startsWith("wallet:history:more:")) {
+          const offset = parseInt(callbackData.split(":").pop() ?? "0", 10);
+          return await handleWalletHistory(String(offset));
+        }
+
+        // wallet:history:search
+        if (callbackData === "wallet:history:search") {
+          return {
+            text:
+              "🔍 *Search Transactions*\n\n" +
+              "Describe what you're looking for and I'll find it:\n\n" +
+              '• "payments to Castro last week"\n' +
+              '• "transactions over 10 DOGE"\n' +
+              '• "all received transactions"\n' +
+              '• "fees paid this month"\n\n' +
+              "Just type your query below 👇",
+          };
         }
 
         return { text: "Unknown action." };
@@ -1522,35 +1567,59 @@ const dogeWalletPlugin = {
       return { text };
     }
 
-    async function handleWalletHistory() {
-      const entries = await auditLog.getFullHistory(20);
+    async function handleWalletHistory(args?: string): Promise<{ text: string; replyMarkup?: any }> {
+      const PAGE_SIZE = 5;
+      let offset = Math.max(0, parseInt(args ?? "", 10) || 0);
 
-      if (entries.length === 0) {
+      // Fetch enough to detect "has more" — we need offset + PAGE_SIZE + 1
+      // But first get total count to clamp offset
+      const allEntries = await auditLog.getFullHistory(offset + PAGE_SIZE + 1);
+
+      if (allEntries.length === 0) {
         return { text: "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\nNo transactions yet. 🐕" };
       }
 
-      let text = "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\n";
+      // Clamp offset: if beyond available entries, reset to last valid page
+      if (offset >= allEntries.length) {
+        offset = Math.max(0, Math.floor((allEntries.length - 1) / PAGE_SIZE) * PAGE_SIZE);
+      }
 
-      for (const e of entries.slice(0, 15)) {
+      const page = Math.floor(offset / PAGE_SIZE) + 1;
+      const pageEntries = allEntries.slice(offset, offset + PAGE_SIZE);
+      const hasMore = allEntries.length > offset + PAGE_SIZE;
+
+      let text = `💰 Transaction History (page ${page})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+      for (const e of pageEntries) {
         const amountDoge = e.amount ? koinuToDoge(e.amount) : 0;
         const ts = formatET(e.timestamp);
         if (e.action === "receive") {
           text +=
             `\n➕ ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
-            `  ${ts}\n` +
-            `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+            `    ${ts} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
         } else {
           const feeDoge = e.fee ? koinuToDoge(e.fee) : 0;
           text +=
             `\n➖ ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
-            `  ⛽ ${formatDoge(feeDoge)} fee | ${e.tier ?? "?"} | ${ts}\n` +
-            `  🔗 ${e.txid?.slice(0, 16) ?? "?"}…\n`;
+            `    ${ts} · ⛽ ${formatDoge(feeDoge)} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
         }
       }
 
-      if (entries.length > 15) text += `\n… and ${entries.length - 15} more.`;
+      // Build inline buttons
+      const buttons: Array<{ text: string; callback_data: string }> = [];
+      if (hasMore) {
+        buttons.push({ text: "📜 Show More", callback_data: `wallet:history:more:${offset + PAGE_SIZE}` });
+      }
+      buttons.push({ text: "🔍 Search", callback_data: "wallet:history:search" });
 
-      return { text };
+      const result: { text: string; replyMarkup?: any } = { text };
+      if (buttons.length > 0) {
+        result.replyMarkup = {
+          inline_keyboard: [buttons],
+        };
+      }
+
+      return result;
     }
 
     async function handleWalletFreeze() {
