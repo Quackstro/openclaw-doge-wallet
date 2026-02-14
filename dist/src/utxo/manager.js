@@ -88,6 +88,12 @@ export class UtxoManager {
      */
     async refresh(address) {
         const networkUtxos = await this.provider.getUtxos(address);
+        // Defensive guard: if network returns empty but we had UTXOs cached,
+        // this is likely an API error (rate limit, outage). Preserve cached data.
+        if (networkUtxos.length === 0 && this.utxos.length > 0) {
+            this.log("warn", `doge-wallet: refresh returned 0 UTXOs but ${this.utxos.length} cached — skipping update (possible API error)`);
+            return;
+        }
         // Build map of existing UTXOs to preserve lock state
         const existingMap = new Map();
         for (const u of this.utxos) {

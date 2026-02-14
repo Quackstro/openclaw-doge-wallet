@@ -115,7 +115,18 @@ export class BlockCypherProvider implements DogeApiProvider {
       throw new ProviderError("blockcypher", `HTTP ${res.status}: ${body.slice(0, 500)}`, res.status);
     }
 
-    return (await res.json()) as T;
+    const json = (await res.json()) as T & { error?: string };
+
+    // BlockCypher sometimes returns 200 with an error body instead of a proper HTTP error code
+    if (json && typeof json === "object" && "error" in json && json.error) {
+      const errMsg = String(json.error);
+      if (/limit/i.test(errMsg)) {
+        throw new RateLimitError("blockcypher");
+      }
+      throw new ProviderError("blockcypher", `API error: ${errMsg.slice(0, 500)}`);
+    }
+
+    return json as T;
   }
 
   async getBalance(address: string): Promise<{ confirmed: number; unconfirmed: number }> {
