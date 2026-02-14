@@ -7,21 +7,29 @@
  * Much delete. Very secure. Wow. 🐕
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const execFileP = promisify(execFile);
-
 // ============================================================================
 // Message Deletion
 // ============================================================================
 
+// Module-level bot token — set once at plugin startup via setBotToken().
+let _botToken: string | undefined;
+
+/**
+ * Set the Telegram bot token for message deletion.
+ * Called once from the plugin entry point during registration.
+ */
+export function setBotToken(token: string): void {
+  _botToken = token;
+}
+
 /**
  * Delete a user's message from Telegram.
- * Used to immediately remove passphrase messages for security.
+ * Used to immediately remove passphrase/mnemonic messages for security.
  *
  * SECURITY: This is critical for passphrase protection. If deletion fails,
  * the caller should warn the user to delete manually.
+ *
+ * Uses the Telegram Bot API directly (no CLI dependency).
  *
  * @param chatId - Telegram chat ID
  * @param messageId - Message ID to delete
@@ -33,15 +41,28 @@ export async function deleteUserMessage(
   messageId: string,
   log?: (level: 'info' | 'warn' | 'error', msg: string) => void
 ): Promise<boolean> {
+  if (!_botToken) {
+    log?.('warn', `doge-wallet: cannot delete message — no bot token configured`);
+    return false;
+  }
+
   try {
-    // Use OpenClaw CLI to delete the message
-    await execFileP('openclaw', [
-      'message',
-      'delete',
-      '--channel', 'telegram',
-      '--target', chatId,
-      '--message-id', messageId,
-    ], { timeout: 10_000 });
+    const url = `https://api.telegram.org/bot${_botToken}/deleteMessage`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: Number(messageId),
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      log?.('warn', `doge-wallet: Telegram deleteMessage failed (${res.status}): ${body}`);
+      return false;
+    }
 
     log?.('info', `doge-wallet: deleted message ${messageId} in chat ${chatId}`);
     return true;

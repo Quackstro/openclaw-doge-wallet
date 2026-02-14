@@ -15,5 +15,5 @@ export { OnboardingFlow } from './flow.js';
 // Passphrase Validation
 export { validatePassphrase, getStrengthDescription, getSuggestionTip, } from './passphrase-validator.js';
 // Message Utilities
-export { deleteUserMessage, formatRecoveryPhrase, pickVerificationIndices, verifyRecoveryWords, welcomeMessage, learnMoreMessage, passphrasePromptMessage, weakPassphraseMessage, recoveryPhraseMessage, verificationPromptMessage, verificationFailedMessage, limitsPromptMessage, customLimitsMessage, completionMessage, resumePromptMessage, inlineRow, inlineGrid, } from './message-utils.js';
+export { setBotToken, deleteUserMessage, formatRecoveryPhrase, pickVerificationIndices, verifyRecoveryWords, welcomeMessage, learnMoreMessage, passphrasePromptMessage, weakPassphraseMessage, recoveryPhraseMessage, verificationPromptMessage, verificationFailedMessage, limitsPromptMessage, customLimitsMessage, completionMessage, resumePromptMessage, inlineRow, inlineGrid, } from './message-utils.js';
 //# sourceMappingURL=index.js.map

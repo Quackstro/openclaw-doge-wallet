@@ -46,7 +46,7 @@ import { ensureSecureDataDir } from "./src/secure-fs.js";
 // Phase 6: Mainnet configuration
 import { applyMainnetSafetyDefaults, runMainnetPreflightChecks, validateMainnetConfig, } from "./src/mainnet-config.js";
 // Phase 7: Onboarding flow
-import { OnboardingFlow, deleteUserMessage, } from "./src/onboarding/index.js";
+import { OnboardingFlow, setBotToken, deleteUserMessage, } from "./src/onboarding/index.js";
 // ============================================================================
 // Formatting Helpers (used throughout)
 // ============================================================================
@@ -127,6 +127,16 @@ const dogeWalletPlugin = {
                 api.logger[level](msg);
             }
         };
+        // ------------------------------------------------------------------
+        // Telegram Bot Token (for message deletion)
+        // ------------------------------------------------------------------
+        const telegramBotToken = api.config?.channels?.telegram?.botToken;
+        if (telegramBotToken) {
+            setBotToken(telegramBotToken);
+        }
+        else {
+            log("warn", "doge-wallet: no Telegram bot token found — message auto-delete will not work");
+        }
         // ------------------------------------------------------------------
         // API Providers
         // ------------------------------------------------------------------
@@ -846,7 +856,7 @@ const dogeWalletPlugin = {
             acceptsArgs: true,
             handler: async (ctx) => {
                 const args = ctx.args?.trim() ?? "";
-                const chatId = ctx.chatId ?? ctx.chat?.id ?? "unknown";
+                const chatId = ctx.chatId ?? ctx.chat?.id ?? ctx.senderId ?? "unknown";
                 const messageId = ctx.messageId ?? ctx.message?.message_id?.toString();
                 // Check if wallet is initialized
                 const initialized = await walletManager.isInitialized();
@@ -867,7 +877,12 @@ const dogeWalletPlugin = {
                     case "send": return await handleWalletSend(subArgs);
                     case "approve": return await handleWalletApprove(subArgs, chatId);
                     case "deny": return await handleWalletDeny(subArgs, chatId);
-                    case "init": return await handleWalletInit(subArgs);
+                    case "init": {
+                        // SECURITY: Auto-delete message containing passphrase
+                        if (messageId)
+                            deleteUserMessage(chatId, messageId, log).catch(() => { });
+                        return await handleWalletInit(subArgs);
+                    }
                     case "recover": {
                         // SECURITY: Auto-delete message that may contain mnemonic
                         if (messageId)
@@ -1191,46 +1206,9 @@ const dogeWalletPlugin = {
             if (walletManager.isUnlocked()) {
                 return { text: "🐕 Wallet already unlocked. 🔓" };
             }
+            // Step 1: Unlock the wallet (critical — errors here are real failures)
             try {
                 await walletManager.unlock(passphrase);
-                const address = await walletManager.getAddress();
-                // Refresh balance and show detailed info
-                if (address) {
-                    await utxoManager.refresh(address);
-                }
-                const balance = utxoManager.getBalance();
-                const totalDoge = koinuToDoge(balance.confirmed + balance.unconfirmed);
-                const usdValue = priceService.dogeToUsd(totalDoge);
-                const utxoCount = utxoManager.getUtxos().length;
-                const frozen = policyEngine.isFrozen();
-                let text = "🐕 Wallet Unlocked 🔓\n━━━━━━━━━━━━━━━━━━━━━\n" +
-                    `📍 ${address}\n` +
-                    `💰 Balance: ${formatDogeUsd(totalDoge, usdValue)}\n` +
-                    `📊 UTXOs: ${utxoCount}\n` +
-                    `🌐 Network: ${cfg.network}`;
-                if (frozen) {
-                    text += "\n🧊 Status: FROZEN";
-                }
-                text += "\n\nPrivate key loaded. Much decrypt. Wow. 🐕";
-                // Signal other plugins that the wallet is now unlocked.
-                // Write a trigger file that Brain (or others) can watch for.
-                try {
-                    const triggerDir = `${process.env.HOME || "/home/clawdbot"}/.openclaw/events`;
-                    const { mkdirSync, writeFileSync, chmodSync } = await import("node:fs");
-                    mkdirSync(triggerDir, { recursive: true });
-                    const triggerPath = `${triggerDir}/wallet-unlocked`;
-                    writeFileSync(triggerPath, JSON.stringify({
-                        event: "wallet:unlocked",
-                        address,
-                        timestamp: new Date().toISOString(),
-                    }));
-                    chmodSync(triggerPath, 0o644);
-                    log("info", `doge-wallet: wrote wallet-unlocked event to ${triggerPath}`);
-                }
-                catch (triggerErr) {
-                    log("error", `doge-wallet: failed to write wallet-unlocked event: ${triggerErr.message}`);
-                }
-                return { text };
             }
             catch (err) {
                 if (err instanceof InvalidPassphraseError) {
@@ -1242,6 +1220,48 @@ const dogeWalletPlugin = {
                 log("error", `doge-wallet: unlock failed: ${err.message}`);
                 return { text: "🐕 ❌ Unlock failed. Check logs." };
             }
+            const address = await walletManager.getAddress();
+            // Step 2: Refresh balance (non-critical — don't fail the unlock if this errors)
+            try {
+                if (address) {
+                    await utxoManager.refresh(address);
+                }
+            }
+            catch (refreshErr) {
+                log("warn", `doge-wallet: balance refresh after unlock failed: ${refreshErr.message}`);
+            }
+            const balance = utxoManager.getBalance();
+            const totalDoge = koinuToDoge(balance.confirmed + balance.unconfirmed);
+            const usdValue = priceService.dogeToUsd(totalDoge);
+            const utxoCount = utxoManager.getUtxos().length;
+            const frozen = policyEngine.isFrozen();
+            let text = "🐕 Wallet Unlocked 🔓\n━━━━━━━━━━━━━━━━━━━━━\n" +
+                `📍 ${address}\n` +
+                `💰 Balance: ${formatDogeUsd(totalDoge, usdValue)}\n` +
+                `📊 UTXOs: ${utxoCount}\n` +
+                `🌐 Network: ${cfg.network}`;
+            if (frozen) {
+                text += "\n🧊 Status: FROZEN";
+            }
+            text += "\n\nPrivate key loaded. Much decrypt. Wow. 🐕";
+            // Signal other plugins that the wallet is now unlocked.
+            try {
+                const triggerDir = `${process.env.HOME || "/home/clawdbot"}/.openclaw/events`;
+                const { mkdirSync, writeFileSync, chmodSync } = await import("node:fs");
+                mkdirSync(triggerDir, { recursive: true });
+                const triggerPath = `${triggerDir}/wallet-unlocked`;
+                writeFileSync(triggerPath, JSON.stringify({
+                    event: "wallet:unlocked",
+                    address,
+                    timestamp: new Date().toISOString(),
+                }));
+                chmodSync(triggerPath, 0o644);
+                log("info", `doge-wallet: wrote wallet-unlocked event to ${triggerPath}`);
+            }
+            catch (triggerErr) {
+                log("error", `doge-wallet: failed to write wallet-unlocked event: ${triggerErr.message}`);
+            }
+            return { text };
         }
         async function handleWalletUtxos() {
             const initialized = await walletManager.isInitialized();

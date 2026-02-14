@@ -7,11 +7,18 @@
  * Much delete. Very secure. Wow. 🐕
  */
 /**
+ * Set the Telegram bot token for message deletion.
+ * Called once from the plugin entry point during registration.
+ */
+export declare function setBotToken(token: string): void;
+/**
  * Delete a user's message from Telegram.
- * Used to immediately remove passphrase messages for security.
+ * Used to immediately remove passphrase/mnemonic messages for security.
  *
  * SECURITY: This is critical for passphrase protection. If deletion fails,
  * the caller should warn the user to delete manually.
+ *
+ * Uses the Telegram Bot API directly (no CLI dependency).
  *
  * @param chatId - Telegram chat ID
  * @param messageId - Message ID to delete

@@ -36,6 +36,7 @@ export {
 
 // Message Utilities
 export {
+  setBotToken,
   deleteUserMessage,
   formatRecoveryPhrase,
   pickVerificationIndices,

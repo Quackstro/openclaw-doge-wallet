@@ -10,5 +10,5 @@ export { OnboardingState, CALLBACKS, CALLBACK_PREFIX, type OnboardingSession, ty
 export { OnboardingStateManager } from './state.js';
 export { OnboardingFlow, type OnboardingFlowConfig, type FlowResult } from './flow.js';
 export { validatePassphrase, getStrengthDescription, getSuggestionTip, } from './passphrase-validator.js';
-export { deleteUserMessage, formatRecoveryPhrase, pickVerificationIndices, verifyRecoveryWords, welcomeMessage, learnMoreMessage, passphrasePromptMessage, weakPassphraseMessage, recoveryPhraseMessage, verificationPromptMessage, verificationFailedMessage, limitsPromptMessage, customLimitsMessage, completionMessage, resumePromptMessage, inlineRow, inlineGrid, type InlineKeyboard, type InlineKeyboardButton, } from './message-utils.js';
+export { setBotToken, deleteUserMessage, formatRecoveryPhrase, pickVerificationIndices, verifyRecoveryWords, welcomeMessage, learnMoreMessage, passphrasePromptMessage, weakPassphraseMessage, recoveryPhraseMessage, verificationPromptMessage, verificationFailedMessage, limitsPromptMessage, customLimitsMessage, completionMessage, resumePromptMessage, inlineRow, inlineGrid, type InlineKeyboard, type InlineKeyboardButton, } from './message-utils.js';
 //# sourceMappingURL=index.d.ts.map
