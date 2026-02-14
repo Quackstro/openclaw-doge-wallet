@@ -245,6 +245,8 @@ List recent invoices.
 ### `/wallet init <passphrase>`
 Create a new wallet. The passphrase encrypts your private key.
 
+> 🔒 **Auto-delete:** Your message is automatically deleted from Telegram to protect your passphrase.
+
 ```
 🐕 Wallet Created!
 ━━━━━━━━━━━━━━━━━━
@@ -260,6 +262,8 @@ Much wallet. Very secure. Wow. 🐕
 ### `/wallet recover <mnemonic> | <passphrase>`
 Restore a wallet from a 24-word recovery phrase.
 
+> 🔒 **Auto-delete:** Your message is automatically deleted from Telegram to protect your mnemonic and passphrase.
+
 ```
 🐕 Wallet Recovered!
 ━━━━━━━━━━━━━━━━━━━━
@@ -272,6 +276,8 @@ Restore a wallet from a 24-word recovery phrase.
 
 ### `/wallet unlock <passphrase>`
 Unlock the wallet for sending.
+
+> 🔒 **Auto-delete:** Your message is automatically deleted from Telegram to protect your passphrase.
 
 ```
 🐕 🔓 Wallet unlocked!

@@ -76,6 +76,21 @@ For convenience (not security-critical), you may also backup:
 
 These can be regenerated from the blockchain; they contain no secrets.
 
+## 🗑️ Sensitive Message Auto-Delete
+
+Commands that contain sensitive data (passphrases, mnemonics) are automatically deleted from the Telegram chat after being processed. This prevents secrets from remaining visible in chat history.
+
+**Protected commands:**
+- `/wallet init <passphrase>` — contains passphrase
+- `/wallet recover <mnemonic> | <passphrase>` — contains mnemonic and passphrase
+- `/wallet unlock <passphrase>` — contains passphrase
+
+The deletion happens via the Telegram Bot API immediately after the command is received. If deletion fails (e.g., bot lacks permission), a warning is logged but the command still executes normally.
+
+**Requirements:**
+- The Telegram bot token must be configured in `channels.telegram.botToken`
+- The bot must have permission to delete messages in the chat
+
 ## 🛡️ Security Considerations for Operators
 
 ### Network Security
