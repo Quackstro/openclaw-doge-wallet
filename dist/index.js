@@ -1216,15 +1216,20 @@ const dogeWalletPlugin = {
                 // Write a trigger file that Brain (or others) can watch for.
                 try {
                     const triggerDir = `${process.env.HOME || "/home/clawdbot"}/.openclaw/events`;
-                    const { mkdirSync, writeFileSync } = await import("node:fs");
+                    const { mkdirSync, writeFileSync, chmodSync } = await import("node:fs");
                     mkdirSync(triggerDir, { recursive: true });
-                    writeFileSync(`${triggerDir}/wallet-unlocked`, JSON.stringify({
+                    const triggerPath = `${triggerDir}/wallet-unlocked`;
+                    writeFileSync(triggerPath, JSON.stringify({
                         event: "wallet:unlocked",
                         address,
                         timestamp: new Date().toISOString(),
                     }));
+                    chmodSync(triggerPath, 0o644);
+                    log("info", `doge-wallet: wrote wallet-unlocked event to ${triggerPath}`);
                 }
-                catch { /* non-fatal */ }
+                catch (triggerErr) {
+                    log("error", `doge-wallet: failed to write wallet-unlocked event: ${triggerErr.message}`);
+                }
                 return { text };
             }
             catch (err) {

@@ -5,10 +5,11 @@ node_modules/
 # dist/
 
 # Local wallet data (NEVER commit)
+# These patterns target runtime data dirs, not src/keys or src/utxo
 *.jsonl
-keys/
-audit/
-utxo/
+/keys/
+/audit/
+/utxo/
 
 # OS
 .DS_Store
