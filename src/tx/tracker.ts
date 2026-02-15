@@ -90,7 +90,9 @@ const MAX_PENDING_AGE_MS = 24 * 60 * 60 * 1000;
  */
 async function verifyViaBlockchair(txid: string): Promise<{ confirmations: number } | null> {
   try {
-    const res = await fetch(`https://api.blockchair.com/dogecoin/dashboards/transaction/${txid}`);
+    const res = await fetch(`https://api.blockchair.com/dogecoin/dashboards/transaction/${txid}`, {
+      signal: AbortSignal.timeout(15_000), // 15s timeout for fallback verification
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, any>;
     const tx = data?.data?.[txid]?.transaction;

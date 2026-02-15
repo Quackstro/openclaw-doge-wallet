@@ -1,6 +1,6 @@
 {
   "name": "@quackstro/doge-wallet",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Self-custodial Dogecoin wallet plugin for OpenClaw — hold, send, receive, and manage DOGE autonomously 🐕",
   "type": "module",
   "main": "dist/index.js",

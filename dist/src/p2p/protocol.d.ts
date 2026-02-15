@@ -21,7 +21,7 @@ export declare const DEFAULT_PORT: {
 /** Protocol version to advertise (70015 = BIP-130+ compact blocks era) */
 export declare const PROTOCOL_VERSION = 70015;
 /** User agent we announce ourselves as */
-export declare const USER_AGENT = "/OpenClawDoge:0.1.0/";
+export declare const USER_AGENT = "/OpenClawDoge:1.0.0/";
 /** NODE_NETWORK service bit — we don't serve blocks, so claim 0 */
 export declare const SERVICES: bigint;
 /** Header size: magic(4) + command(12) + length(4) + checksum(4) */

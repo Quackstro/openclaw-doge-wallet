@@ -32,6 +32,8 @@ export interface BuildTransactionParams {
   feeRate: number;
   /** Optional OP_RETURN data (e.g., for Quackstro Protocol invoice IDs) */
   opReturnData?: string;
+  /** Maximum fee in koinu (safety cap — rejects tx if fee exceeds this) */
+  maxFee?: number;
 }
 
 export interface TxOutput {
@@ -91,6 +93,7 @@ export function buildTransaction(params: BuildTransactionParams): BuildTransacti
     changeAddress,
     feeRate,
     opReturnData,
+    maxFee,
   } = params;
 
   // Validation
@@ -142,6 +145,14 @@ export function buildTransaction(params: BuildTransactionParams): BuildTransacti
     } else {
       throw new InsufficientFundsError("Insufficient funds for this transaction");
     }
+  }
+
+  // Safety cap: reject transactions with absurdly high fees
+  if (maxFee && actualFee > maxFee) {
+    throw new Error(
+      `Fee ${actualFee} koinu exceeds safety cap ${maxFee} koinu. ` +
+      `This likely indicates a fee rate calculation error.`
+    );
   }
 
   // Build UnspentOutput objects for bitcore

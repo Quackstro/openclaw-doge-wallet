@@ -31,7 +31,7 @@ export const DEFAULT_PORT = {
 export const PROTOCOL_VERSION = 70015;
 
 /** User agent we announce ourselves as */
-export const USER_AGENT = "/OpenClawDoge:0.1.0/";
+export const USER_AGENT = "/OpenClawDoge:1.0.0/";
 
 /** NODE_NETWORK service bit — we don't serve blocks, so claim 0 */
 export const SERVICES = BigInt(0);

@@ -254,6 +254,7 @@ async function broadcastViaBlockchair(signedTxHex: string): Promise<{ txid: stri
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data: signedTxHex }),
+    signal: AbortSignal.timeout(30_000), // 30s timeout
   });
 
   if (!res.ok) {

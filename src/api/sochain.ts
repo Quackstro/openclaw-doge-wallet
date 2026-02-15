@@ -80,7 +80,10 @@ export class SoChainProvider implements DogeApiProvider {
     const urlStr = `${this.baseUrl}${path}`;
     let res: Response;
     try {
-      res = await fetch(urlStr, { headers: this.headers });
+      res = await fetch(urlStr, {
+        headers: this.headers,
+        signal: AbortSignal.timeout(30_000), // 30s timeout to prevent hanging
+      });
     } catch (err: any) {
       throw new ProviderError("sochain", `Network error: ${err.message}`);
     }
@@ -265,6 +268,7 @@ export class SoChainProvider implements DogeApiProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ tx_hex: rawHex }),
+        signal: AbortSignal.timeout(30_000), // 30s timeout
       });
     } catch (err: any) {
       throw new ProviderError("sochain", `Broadcast network error: ${err.message}`);

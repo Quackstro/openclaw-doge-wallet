@@ -25,6 +25,8 @@ export interface BuildTransactionParams {
     feeRate: number;
     /** Optional OP_RETURN data (e.g., for Quackstro Protocol invoice IDs) */
     opReturnData?: string;
+    /** Maximum fee in koinu (safety cap — rejects tx if fee exceeds this) */
+    maxFee?: number;
 }
 export interface TxOutput {
     address: string;

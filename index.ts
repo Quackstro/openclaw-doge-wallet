@@ -621,6 +621,11 @@ const dogeWalletPlugin = {
       const address = await walletManager.getAddress();
       if (!address) throw new WalletNotInitializedError();
 
+      // Self-send protection: prevent sending to own address (wastes fees)
+      if (to === address) {
+        throw new WalletError("SELF_SEND", "Cannot send to your own address — this would only waste fees.");
+      }
+
       const amountKoinu = dogeToKoinu(amountDoge);
       const feeRate = await getFeeRate();
       const spendableUtxos = await utxoManager.getSpendableUtxos(cfg.utxo.minConfirmations);
@@ -633,6 +638,7 @@ const dogeWalletPlugin = {
         utxos: selection.selected,
         changeAddress: address,
         feeRate,
+        maxFee: cfg.fees.maxFeePerKb * 2, // Safety cap: 2x the configured max fee per KB
       });
 
       const privateKey = walletManager.getPrivateKey();
@@ -825,7 +831,8 @@ const dogeWalletPlugin = {
       }
 
       const MAX_DOGE = 10_000_000_000; // 10 billion — above max supply
-      if (!amountDoge || !toAddress || isNaN(amountDoge) || amountDoge <= 0 || amountDoge > MAX_DOGE || !isFinite(amountDoge)) {
+      const MIN_DOGE = 0.001; // dust threshold
+      if (!amountDoge || !toAddress || isNaN(amountDoge) || amountDoge < MIN_DOGE || amountDoge > MAX_DOGE || !isFinite(amountDoge)) {
         return {
           text:
             "🐕 Send DOGE\n" +
@@ -1332,14 +1339,38 @@ const dogeWalletPlugin = {
         invoiceManager.updateAddress(result.address);
         paymentVerifier.updateAddress(result.address);
 
+        // SECURITY: Send mnemonic via direct Telegram message instead of inline
+        // to avoid it being stored in session/command history.
+        try {
+          await sendNotification(
+            `🔐 DOGE Wallet Recovery Phrase\n━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `⚠️ WRITE THIS DOWN NOW. It will NEVER be shown again.\n` +
+            `Do NOT screenshot. Store physically in a safe place.\n\n` +
+            `${result.mnemonic}\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Address: ${result.address}\n` +
+            `Network: ${cfg.network}`
+          );
+        } catch (notifyErr) {
+          log("error", `doge-wallet: CRITICAL - failed to deliver mnemonic via DM: ${(notifyErr as Error).message}`);
+          // Last resort: return inline so user doesn't lose funds
+          return {
+            text:
+              "🐕 Wallet Initialized!\n━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+              "⚠️ Secure delivery failed. Save this mnemonic NOW:\n\n" +
+              `🔑 Mnemonic:\n\`${result.mnemonic}\`\n\n` +
+              `📍 Address: ${result.address}\n` +
+              `🌐 Network: ${cfg.network}\n` +
+              "🔓 Status: Unlocked\n\n" +
+              "⚠️ DELETE THIS MESSAGE after saving your mnemonic!",
+          };
+        }
+
         return {
           text:
             "🐕 Wallet Initialized!\n━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-            "⚠️⚠️⚠️ BACKUP YOUR MNEMONIC NOW ⚠️⚠️⚠️\n" +
-            "Write it down physically. Do NOT screenshot.\n" +
-            "This is the ONLY time it will be shown.\n\n" +
-            `🔑 Mnemonic:\n\`${result.mnemonic}\`\n\n` +
-            "━━━━━━━━━━━━━━━━━━━━━━\n" +
+            "🔐 Recovery phrase sent via separate message.\n" +
+            "⚠️ Write it down physically and delete the message.\n\n" +
             `📍 Address: ${result.address}\n` +
             `🌐 Network: ${cfg.network}\n` +
             "🔓 Status: Unlocked\n\n" +
@@ -2482,6 +2513,14 @@ const dogeWalletPlugin = {
           _toolCallId: string,
           params: { invoiceId: string; txid: string; amount: number },
         ) {
+          // Validate txid format (64-char hex string)
+          if (!/^[0-9a-fA-F]{64}$/.test(params.txid)) {
+            return {
+              content: [{ type: "text", text: "Invalid transaction ID format." }],
+              details: { error: "INVALID_TXID" },
+            };
+          }
+
           const invoice = invoiceManager.getInvoice(params.invoiceId);
           if (!invoice) {
             return {
@@ -2673,6 +2712,11 @@ const dogeWalletPlugin = {
         txTracker.stopPolling();
         walletManager.lock();
         priceService.stop();
+        rateLimiter.saveState();
+        // Clean up process-level shutdown handlers to prevent leaks
+        process.removeListener('SIGTERM', shutdownHandler);
+        process.removeListener('SIGINT', shutdownHandler);
+        process.removeListener('beforeExit', shutdownHandler);
         log("info", "doge-wallet: 🐕 Plugin stopped. Wallet locked. Goodbye.");
       },
     });

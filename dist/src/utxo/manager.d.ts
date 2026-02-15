@@ -62,6 +62,14 @@ export declare class UtxoManager {
      */
     unlockUtxo(txid: string, vout: number): Promise<boolean>;
     /**
+     * Unlock any UTXOs that have been locked for longer than the given duration.
+     * Prevents stuck UTXOs from abandoned/failed transactions.
+     *
+     * @param maxLockAgeMs - Maximum lock age in milliseconds (default: 30 minutes)
+     * @returns Number of UTXOs unlocked
+     */
+    cleanupStaleLocks(maxLockAgeMs?: number): number;
+    /**
      * Select UTXOs using a selector function and lock the selected ones.
      */
     selectAndLock<T extends {

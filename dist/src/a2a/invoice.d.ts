@@ -107,6 +107,11 @@ export declare class InvoiceManager {
      */
     save(): Promise<void>;
     /**
+     * Evict oldest non-pending invoices when storage cap is reached.
+     * Prefers evicting expired, then paid, then cancelled — oldest first.
+     */
+    private evictOldInvoices;
+    /**
      * Check if an invoice is expired based on current time.
      */
     isExpired(invoice: DogeInvoice): boolean;

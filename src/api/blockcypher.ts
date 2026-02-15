@@ -100,6 +100,7 @@ export class BlockCypherProvider implements DogeApiProvider {
     try {
       res = await fetch(urlStr, {
         headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(30_000), // 30s timeout to prevent hanging
       });
     } catch (err: any) {
       throw new ProviderError("blockcypher", `Network error: ${err.message}`);
@@ -308,6 +309,7 @@ export class BlockCypherProvider implements DogeApiProvider {
           "Accept": "application/json",
         },
         body: JSON.stringify({ tx: rawHex }),
+        signal: AbortSignal.timeout(30_000), // 30s timeout
       });
     } catch (err: any) {
       throw new ProviderError("blockcypher", `Broadcast network error: ${err.message}`);

@@ -124,6 +124,11 @@ export class InvoiceManager {
       };
     }
 
+    // Enforce storage cap: evict oldest expired/paid invoices if at limit
+    if (this.invoices.size >= MAX_STORED_INVOICES) {
+      this.evictOldInvoices();
+    }
+
     // Store in memory
     this.invoices.set(invoice.invoiceId, invoice);
 
@@ -335,6 +340,26 @@ export class InvoiceManager {
   // --------------------------------------------------------------------------
   // Utility
   // --------------------------------------------------------------------------
+
+  /**
+   * Evict oldest non-pending invoices when storage cap is reached.
+   * Prefers evicting expired, then paid, then cancelled — oldest first.
+   */
+  private evictOldInvoices(): void {
+    const evictable = Array.from(this.invoices.values())
+      .filter((inv) => inv.status !== "pending")
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    // Evict up to 10% of cap to avoid evicting on every create
+    const evictCount = Math.max(1, Math.floor(MAX_STORED_INVOICES * 0.1));
+    for (let i = 0; i < Math.min(evictCount, evictable.length); i++) {
+      this.invoices.delete(evictable[i].invoiceId);
+    }
+
+    if (evictable.length > 0) {
+      this.log("info", `doge-wallet: evicted ${Math.min(evictCount, evictable.length)} old invoices (cap: ${MAX_STORED_INVOICES})`);
+    }
+  }
 
   /**
    * Check if an invoice is expired based on current time.

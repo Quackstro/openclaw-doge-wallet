@@ -416,9 +416,15 @@ export const KOINU_PER_DOGE = 100_000_000;
 
 /** Convert DOGE to koinu */
 export function dogeToKoinu(doge: number): number {
+  // Reject invalid inputs
+  if (!Number.isFinite(doge) || doge < 0) {
+    throw new Error(`Invalid DOGE amount: ${doge}`);
+  }
   // Use string-based multiplication to avoid floating point errors
   // e.g., 0.1 + 0.2 = 0.30000000000000004
-  const [whole = "0", frac = ""] = String(doge).split(".");
+  // Handle scientific notation by converting via toFixed first
+  const str = doge.toFixed(8);
+  const [whole = "0", frac = ""] = str.split(".");
   const padded = (frac + "00000000").slice(0, 8);
   return parseInt(whole, 10) * KOINU_PER_DOGE + parseInt(padded, 10);
 }

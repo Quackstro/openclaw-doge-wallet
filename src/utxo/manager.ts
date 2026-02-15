@@ -144,6 +144,10 @@ export class UtxoManager {
 
     this.utxos = merged;
     this.lastRefreshed = new Date().toISOString();
+
+    // Clean up stale locks (UTXOs locked > 30 min from abandoned transactions)
+    this.cleanupStaleLocks();
+
     this.saveCache(address);
     this.log("info", `doge-wallet: refreshed ${merged.length} UTXOs for ${address}`);
   }
@@ -184,6 +188,36 @@ export class UtxoManager {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Unlock any UTXOs that have been locked for longer than the given duration.
+   * Prevents stuck UTXOs from abandoned/failed transactions.
+   *
+   * @param maxLockAgeMs - Maximum lock age in milliseconds (default: 30 minutes)
+   * @returns Number of UTXOs unlocked
+   */
+  cleanupStaleLocks(maxLockAgeMs: number = 30 * 60 * 1000): number {
+    const now = Date.now();
+    let unlocked = 0;
+
+    for (const utxo of this.utxos) {
+      if (utxo.locked && utxo.lockedAt) {
+        const lockAge = now - new Date(utxo.lockedAt).getTime();
+        if (lockAge > maxLockAgeMs) {
+          utxo.locked = false;
+          utxo.lockedAt = undefined;
+          utxo.lockedFor = undefined;
+          unlocked++;
+          this.log(
+            "warn",
+            `doge-wallet: unlocked stale UTXO ${utxo.txid}:${utxo.vout} (locked for ${Math.round(lockAge / 60000)}m)`,
+          );
+        }
+      }
+    }
+
+    return unlocked;
   }
 
   /**

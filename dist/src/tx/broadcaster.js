@@ -179,6 +179,7 @@ async function broadcastViaBlockchair(signedTxHex) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data: signedTxHex }),
+        signal: AbortSignal.timeout(30_000), // 30s timeout
     });
     if (!res.ok) {
         const body = await res.text().catch(() => "");

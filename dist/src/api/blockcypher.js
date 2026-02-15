@@ -90,6 +90,7 @@ export class BlockCypherProvider {
         try {
             res = await fetch(urlStr, {
                 headers: { "Accept": "application/json" },
+                signal: AbortSignal.timeout(30_000), // 30s timeout to prevent hanging
             });
         }
         catch (err) {
@@ -224,6 +225,7 @@ export class BlockCypherProvider {
                     "Accept": "application/json",
                 },
                 body: JSON.stringify({ tx: rawHex }),
+                signal: AbortSignal.timeout(30_000), // 30s timeout
             });
         }
         catch (err) {

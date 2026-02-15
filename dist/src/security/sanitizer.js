@@ -388,8 +388,10 @@ export function sanitizeErrorMessage(error) {
     message = message.replace(/\n\s+at\s+.+/g, "");
     // Strip internal error codes
     message = message.replace(/ENOENT|EACCES|EPERM|ECONNREFUSED|ETIMEDOUT/gi, "system error");
-    // Strip potential secrets (API keys, tokens)
-    message = message.replace(/[\w\-]{20,}/g, "[redacted]");
+    // Strip potential secrets (API keys, tokens) — look for hex/base64-like patterns
+    // that are 32+ chars (avoids redacting normal English words like "InsufficientFundsError")
+    message = message.replace(/[0-9a-f]{32,}/gi, "[redacted]");
+    message = message.replace(/[A-Za-z0-9+/=]{40,}/g, "[redacted]");
     // Trim whitespace
     message = message.trim();
     // Ensure message isn't empty

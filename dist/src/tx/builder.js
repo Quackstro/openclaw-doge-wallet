@@ -32,7 +32,7 @@ const DUST_THRESHOLD = 100_000; // 0.001 DOGE
  * @throws Error if inputs are insufficient, amounts are invalid, etc.
  */
 export function buildTransaction(params) {
-    const { from, to, amount, utxos, changeAddress, feeRate, opReturnData, } = params;
+    const { from, to, amount, utxos, changeAddress, feeRate, opReturnData, maxFee, } = params;
     // Validation
     if (amount <= 0) {
         throw new Error("Transaction amount must be positive");
@@ -80,6 +80,11 @@ export function buildTransaction(params) {
         else {
             throw new InsufficientFundsError("Insufficient funds for this transaction");
         }
+    }
+    // Safety cap: reject transactions with absurdly high fees
+    if (maxFee && actualFee > maxFee) {
+        throw new Error(`Fee ${actualFee} koinu exceeds safety cap ${maxFee} koinu. ` +
+            `This likely indicates a fee rate calculation error.`);
     }
     // Build UnspentOutput objects for bitcore
     // NOTE: If scriptPubKey is empty (some API providers don't return it),

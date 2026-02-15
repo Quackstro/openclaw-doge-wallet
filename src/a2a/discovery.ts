@@ -123,6 +123,11 @@ export async function fetchWellKnown(
   const normalized = baseUrl.replace(/\/$/, "");
   const url = `${normalized}/.well-known/openclaw-pay.json`;
 
+  // SSRF protection: only fetch from HTTPS URLs
+  if (!url.startsWith("https://")) {
+    throw new Error("Discovery URLs must use HTTPS");
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
