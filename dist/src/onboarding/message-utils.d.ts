@@ -25,7 +25,7 @@ export declare function setBotToken(token: string): void;
  * @param log - Optional logging function
  * @returns true if deleted successfully, false otherwise (caller should warn user)
  */
-export declare function deleteUserMessage(chatId: string, messageId: string, log?: (level: 'info' | 'warn' | 'error', msg: string) => void): Promise<boolean>;
+export declare function deleteUserMessage(chatId: string, messageId: string, log?: (level: 'info' | 'warn' | 'error', msg: string) => void, tokenOverride?: string): Promise<boolean>;
 /**
  * Formats a 24-word BIP39 mnemonic for display in a readable 4-column layout.
  *

@@ -1053,6 +1053,16 @@ const dogeWalletPlugin = {
         const chatId = ctx.chatId ?? ctx.chat?.id ?? (ctx as any).senderId ?? "unknown";
         const messageId = ctx.messageId ?? ctx.message?.message_id?.toString();
 
+        // Resolve bot token for this account (multi-bot support)
+        const actId = (ctx as any).accountId as string | undefined;
+        const accountBotToken = actId
+          ? (api.config?.channels?.telegram as any)?.accounts?.[actId]?.botToken
+          : undefined;
+
+        // DEBUG: Log context for message deletion troubleshooting
+        log("info", `doge-wallet: /wallet command ctx — chatId=${chatId} messageId=${messageId} accountId=${actId} hasAccountToken=${!!accountBotToken} ctxKeys=${Object.keys(ctx).join(",")}`);
+
+
         // Check if wallet is initialized
         const initialized = await walletManager.isInitialized();
 
@@ -1078,19 +1088,19 @@ const dogeWalletPlugin = {
           case "deny":      return await handleWalletDeny(subArgs, chatId);
           case "init": {
             // SECURITY: Auto-delete message containing passphrase
-            if (messageId) deleteUserMessage(chatId, messageId, log).catch(() => {});
+            if (messageId) deleteUserMessage(chatId, messageId, log, accountBotToken).catch(() => {});
             return await handleWalletInit(subArgs);
           }
           case "recover": {
             // SECURITY: Auto-delete message that may contain mnemonic
-            if (messageId) deleteUserMessage(chatId, messageId, log).catch(() => {});
+            if (messageId) deleteUserMessage(chatId, messageId, log, accountBotToken).catch(() => {});
             return await handleWalletRecover(subArgs);
           }
           case "address":   return await handleWalletAddress();
           case "lock":      return handleWalletLock();
           case "unlock": {
             // SECURITY: Auto-delete message containing passphrase
-            if (messageId) deleteUserMessage(chatId, messageId, log).catch(() => {});
+            if (messageId) deleteUserMessage(chatId, messageId, log, accountBotToken).catch(() => {});
             return await handleWalletUnlock(subArgs);
           }
           case "utxos":     return await handleWalletUtxos();
@@ -1100,7 +1110,7 @@ const dogeWalletPlugin = {
           case "unfreeze":  return await handleWalletUnfreeze();
           case "export": {
             // SECURITY: Auto-delete message that may contain passphrase
-            if (messageId) deleteUserMessage(chatId, messageId, log).catch(() => {});
+            if (messageId) deleteUserMessage(chatId, messageId, log, accountBotToken).catch(() => {});
             return await handleWalletExport(subArgs);
           }
           case "invoice":   return await handleWalletInvoice(subArgs);
@@ -1279,6 +1289,7 @@ const dogeWalletPlugin = {
 
         // Delete the user's message if requested (passphrase security)
         if (flowResult.deleteMessageId && messageId) {
+          // Note: message handler context doesn't have accountId yet
           deleteUserMessage(chatId, messageId, log).catch(() => {});
         }
 
@@ -1613,13 +1624,111 @@ const dogeWalletPlugin = {
       return { text };
     }
 
+    /**
+     * Build a unified transaction list merging audit log + on-chain data.
+     * Audit entries take priority (richer metadata: reason, tier).
+     * On-chain transactions not in the audit log are included with a 🔗 marker.
+     * Returns entries sorted newest-first.
+     */
+    interface UnifiedTxEntry {
+      txid: string;
+      type: "sent" | "received";
+      amount: number; // DOGE
+      address: string;
+      fee: number; // DOGE
+      timestamp: string;
+      source: "audit" | "chain";
+      reason?: string;
+      tier?: string;
+    }
+
+    async function getUnifiedHistory(maxEntries: number): Promise<UnifiedTxEntry[]> {
+      // 1. Get audit log entries
+      const auditEntries = await auditLog.getFullHistory(1000);
+      const auditByTxid = new Map<string, typeof auditEntries[0]>();
+      for (const e of auditEntries) {
+        if (e.txid) auditByTxid.set(e.txid, e);
+      }
+
+      const unified: UnifiedTxEntry[] = [];
+
+      // Add audit entries first
+      for (const e of auditEntries) {
+        unified.push({
+          txid: e.txid ?? "unknown",
+          type: e.action === "receive" ? "received" : "sent",
+          amount: e.amount ? koinuToDoge(e.amount) : 0,
+          address: e.address ?? "unknown",
+          fee: e.fee ? koinuToDoge(e.fee) : 0,
+          timestamp: e.timestamp,
+          source: "audit",
+          reason: e.reason,
+          tier: e.tier,
+        });
+      }
+
+      // 2. Try to fetch on-chain transactions if provider is available
+      try {
+        const address = await walletManager.getAddress();
+        if (address) {
+          const chainTxs = await provider.getTransactions(address, maxEntries);
+          for (const tx of chainTxs) {
+            // Skip if already in audit log
+            if (auditByTxid.has(tx.txid)) continue;
+
+            // Determine direction: did we send or receive?
+            const isInput = tx.inputs.some((inp) => inp.address === address);
+            const isOutput = tx.outputs.some((out) => out.address === address);
+
+            if (isInput) {
+              // We sent: find the non-change output (not our address)
+              const destOutput = tx.outputs.find((out) => out.address !== address);
+              const changeOutput = tx.outputs.find((out) => out.address === address);
+              const sentAmount = destOutput ? koinuToDoge(destOutput.amount) : koinuToDoge(tx.totalOutput);
+              unified.push({
+                txid: tx.txid,
+                type: "sent",
+                amount: sentAmount,
+                address: destOutput?.address ?? "unknown",
+                fee: koinuToDoge(tx.fee),
+                timestamp: tx.timestamp ?? new Date().toISOString(),
+                source: "chain",
+              });
+            } else if (isOutput) {
+              // We received: sum outputs to our address
+              const receivedAmount = tx.outputs
+                .filter((out) => out.address === address)
+                .reduce((sum, out) => sum + out.amount, 0);
+              const senderAddr = tx.inputs[0]?.address ?? "unknown";
+              unified.push({
+                txid: tx.txid,
+                type: "received",
+                amount: koinuToDoge(receivedAmount),
+                address: senderAddr,
+                fee: koinuToDoge(tx.fee),
+                timestamp: tx.timestamp ?? new Date().toISOString(),
+                source: "chain",
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        // If chain query fails, we still show audit entries
+        log("warn", `doge-wallet: chain history fetch failed: ${err.message}`);
+      }
+
+      // 3. Sort by timestamp descending and deduplicate
+      unified.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      return unified.slice(0, maxEntries);
+    }
+
     async function handleWalletHistory(args?: string): Promise<{ text: string; channelData?: any }> {
       const PAGE_SIZE = 5;
       let offset = Math.max(0, parseInt(args ?? "", 10) || 0);
 
-      // Fetch enough to detect "has more" — we need offset + PAGE_SIZE + 1
-      // But first get total count to clamp offset
-      const allEntries = await auditLog.getFullHistory(offset + PAGE_SIZE + 1);
+      // Fetch unified history (audit + on-chain)
+      const allEntries = await getUnifiedHistory(200);
 
       if (allEntries.length === 0) {
         return { text: "🐕 Transaction History\n━━━━━━━━━━━━━━━━━━━━━━\nNo transactions yet. 🐕" };
@@ -1631,27 +1740,34 @@ const dogeWalletPlugin = {
       }
 
       const page = Math.floor(offset / PAGE_SIZE) + 1;
+      const totalPages = Math.ceil(allEntries.length / PAGE_SIZE);
       const pageEntries = allEntries.slice(offset, offset + PAGE_SIZE);
       const hasMore = allEntries.length > offset + PAGE_SIZE;
 
-      let text = `💰 Transaction History (page ${page})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+      let text = `💰 Transaction History (page ${page}/${totalPages})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
 
       for (const e of pageEntries) {
-        const amountDoge = e.amount ? koinuToDoge(e.amount) : 0;
         const ts = formatET(e.timestamp);
-        if (e.action === "receive") {
+        const chainTag = e.source === "chain" ? " 🔗" : "";
+        if (e.type === "received") {
           text +=
-            `\n➕ ${formatDoge(amountDoge)} DOGE ← ${truncAddr(e.address ?? "unknown")}\n` +
-            `    ${ts} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
+            `\n➕ ${formatDoge(e.amount)} DOGE ← ${truncAddr(e.address)}${chainTag}\n` +
+            `    ${ts} · 🔗 ${e.txid.slice(0, 8)}…\n`;
         } else {
-          const feeDoge = e.fee ? koinuToDoge(e.fee) : 0;
           text +=
-            `\n➖ ${formatDoge(amountDoge)} DOGE → ${truncAddr(e.address ?? "unknown")}\n` +
-            `    ${ts} · ⛽ ${formatDoge(feeDoge)} · 🔗 ${e.txid?.slice(0, 8) ?? "?"}…\n`;
+            `\n➖ ${formatDoge(e.amount)} DOGE → ${truncAddr(e.address)}${chainTag}\n` +
+            `    ${ts} · ⛽ ${formatDoge(e.fee)} · 🔗 ${e.txid.slice(0, 8)}…\n`;
+          if (e.reason) {
+            text += `    📝 ${e.reason}\n`;
+          }
         }
       }
 
-      // Build inline buttons — OpenClaw reads buttons from channelData.telegram.buttons
+      if (allEntries.some((e) => e.source === "chain")) {
+        text += `\n🔗 = on-chain only (pre-monitoring)\n`;
+      }
+
+      // Build inline buttons
       const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
       const row: Array<{ text: string; callback_data: string }> = [];
       if (hasMore) {
@@ -2203,7 +2319,7 @@ const dogeWalletPlugin = {
         }),
         async execute(_toolCallId: string, params: { limit?: number }) {
           const limit = params.limit ?? 10;
-          const entries = await auditLog.getFullHistory(limit);
+          const entries = await getUnifiedHistory(limit);
 
           if (entries.length === 0) {
             return {
@@ -2212,28 +2328,21 @@ const dogeWalletPlugin = {
             };
           }
 
-          const transactions = entries.map((e) => ({
-            txid: e.txid,
-            type: e.action === "receive" ? "received" : "sent",
-            amount: e.amount ? koinuToDoge(e.amount) : 0,
-            address: e.address ?? "unknown",
-            fee: e.fee ? koinuToDoge(e.fee) : 0,
-            tier: e.tier,
-            timestamp: e.timestamp,
-            reason: e.reason,
-          }));
-
-          const summary = transactions
+          const summary = entries
             .map((t) => {
               const icon = t.type === "received" ? "➕" : "➖";
               const arrow = t.type === "received" ? "←" : "→";
-              return `${icon} ${formatDoge(t.amount)} DOGE ${arrow} ${truncAddr(t.address)} (${formatET(t.timestamp)})`;
+              const src = t.source === "chain" ? " 🔗" : "";
+              return `${icon} ${formatDoge(t.amount)} DOGE ${arrow} ${truncAddr(t.address)} (${formatET(t.timestamp)})${src}`;
             })
             .join("\n");
 
+          const hasChain = entries.some((e) => e.source === "chain");
+          const footer = hasChain ? "\n\n🔗 = on-chain only (pre-monitoring)" : "";
+
           return {
-            content: [{ type: "text", text: `Recent transactions:\n${summary}` }],
-            details: { transactions, count: transactions.length },
+            content: [{ type: "text", text: `Recent transactions:\n${summary}${footer}` }],
+            details: { transactions: entries, count: entries.length },
           };
         },
       },

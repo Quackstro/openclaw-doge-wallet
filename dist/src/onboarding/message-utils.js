@@ -32,13 +32,14 @@ export function setBotToken(token) {
  * @param log - Optional logging function
  * @returns true if deleted successfully, false otherwise (caller should warn user)
  */
-export async function deleteUserMessage(chatId, messageId, log) {
-    if (!_botToken) {
+export async function deleteUserMessage(chatId, messageId, log, tokenOverride) {
+    const token = tokenOverride || _botToken;
+    if (!token) {
         log?.('warn', `doge-wallet: cannot delete message — no bot token configured`);
         return false;
     }
     try {
-        const url = `https://api.telegram.org/bot${_botToken}/deleteMessage`;
+        const url = `https://api.telegram.org/bot${token}/deleteMessage`;
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
