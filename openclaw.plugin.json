@@ -136,6 +136,7 @@
           "enabled":                  { "type": "boolean", "default": true },
           "channel":                  { "type": "string", "default": "telegram" },
           "target":                   { "type": "string", "description": "Telegram chat ID for notifications" },
+          "accountId":                { "type": "string", "description": "Telegram account ID for bot token resolution (e.g. 'finance')" },
           "lowBalanceAlert":          { "type": "number", "default": 100 },
           "dailyLimitWarningPercent": { "type": "number", "default": 80 }
         }
