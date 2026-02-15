@@ -1021,8 +1021,10 @@ const dogeWalletPlugin = {
                 text: flowResult.text,
             };
             if (flowResult.keyboard) {
-                result.replyMarkup = {
-                    inline_keyboard: flowResult.keyboard,
+                result.channelData = {
+                    telegram: {
+                        buttons: flowResult.keyboard,
+                    },
                 };
             }
             if (flowResult.parseMode) {

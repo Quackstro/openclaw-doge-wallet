@@ -1212,14 +1212,16 @@ const dogeWalletPlugin = {
     // ------------------------------------------------------------------
     // Helper: Format onboarding flow result for Telegram
     // ------------------------------------------------------------------
-    function formatOnboardingResult(flowResult: FlowResult): { text: string; replyMarkup?: any; parseMode?: string } {
-      const result: { text: string; replyMarkup?: any; parseMode?: string } = {
+    function formatOnboardingResult(flowResult: FlowResult): { text: string; channelData?: any; parseMode?: string } {
+      const result: { text: string; channelData?: any; parseMode?: string } = {
         text: flowResult.text,
       };
 
       if (flowResult.keyboard) {
-        result.replyMarkup = {
-          inline_keyboard: flowResult.keyboard,
+        result.channelData = {
+          telegram: {
+            buttons: flowResult.keyboard,
+          },
         };
       }
 

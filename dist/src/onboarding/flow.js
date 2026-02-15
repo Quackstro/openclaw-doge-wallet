@@ -120,6 +120,7 @@ export class OnboardingFlow {
         const state = await this.stateManager.getState(chatId);
         switch (state) {
             case OnboardingState.PASSPHRASE_PENDING:
+            case OnboardingState.PASSPHRASE_WEAK_WARNING:
                 return this.handlePassphraseInput(chatId, text, messageId);
             case OnboardingState.VERIFICATION_PENDING:
                 return this.handleVerificationInput(chatId, text);
