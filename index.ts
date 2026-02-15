@@ -197,13 +197,20 @@ const dogeWalletPlugin = {
     };
 
     // ------------------------------------------------------------------
-    // Telegram Bot Token (for message deletion)
+    // Telegram Bot Token (for message deletion & notifications)
     // ------------------------------------------------------------------
-    const telegramBotToken = api.config?.channels?.telegram?.botToken;
+    // Resolve the best bot token: prefer configured account, fall back to default
+    const telegramAccounts = (api.config?.channels?.telegram as any)?.accounts ?? {};
+    const notifyAccountId = cfg.notifications.accountId;
+    const accountToken = notifyAccountId ? telegramAccounts?.[notifyAccountId]?.botToken : undefined;
+    const telegramBotToken = accountToken ?? api.config?.channels?.telegram?.botToken;
     if (telegramBotToken) {
       setBotToken(telegramBotToken);
     } else {
       log("warn", "doge-wallet: no Telegram bot token found — message auto-delete will not work");
+    }
+    if (accountToken && notifyAccountId) {
+      log("info", `doge-wallet: using ${notifyAccountId} account bot token for notifications`);
     }
 
     // ------------------------------------------------------------------

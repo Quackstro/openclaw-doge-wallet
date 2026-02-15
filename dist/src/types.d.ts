@@ -160,6 +160,8 @@ export interface NotificationsConfig {
     enabled: boolean;
     channel: string;
     target: string;
+    /** Telegram account ID for sending notifications (e.g. "finance"). Resolves bot token from config. */
+    accountId?: string;
     lowBalanceAlert: number;
     /** Hours between low balance alerts (default: 24). Set to 0 for no rate limiting. */
     lowBalanceAlertIntervalHours: number;
