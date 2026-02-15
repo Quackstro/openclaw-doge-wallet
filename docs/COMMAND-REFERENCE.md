@@ -308,6 +308,49 @@ Resume normal operations.
 🐕 ✅ Wallet unfrozen. Sends enabled.
 ```
 
+### `/wallet delete <passphrase>`
+Permanently delete the wallet. Requires passphrase confirmation. Also aliased as `/wallet destroy`.
+
+> 🔒 **Auto-delete:** Your message is automatically deleted from Telegram to protect your passphrase.
+
+**Without passphrase (shows warning):**
+```
+🐕 Delete Wallet
+━━━━━━━━━━━━━━━━
+
+⚠️ This permanently destroys your wallet keystore, UTXO cache, and onboarding state.
+Audit logs are preserved for records.
+
+⛔ If you haven't backed up your mnemonic, your funds will be UNRECOVERABLE.
+
+Usage: `/wallet delete <passphrase>`
+Your passphrase is required to confirm deletion.
+```
+
+**With passphrase (executes deletion):**
+```
+🐕 Wallet Deleted
+━━━━━━━━━━━━━━━━━
+
+✅ Removed 6 wallet file(s).
+📋 Audit logs preserved.
+
+⚠️ Wallet had 106.15 DOGE. Ensure you have your mnemonic backup to recover funds.
+
+To create a new wallet: /wallet init <passphrase>
+```
+
+**What gets deleted:**
+- Encrypted keystore (`keys/wallet.json`)
+- UTXO cache and directories
+- Onboarding state
+- Receive monitor state
+- Alert state, rate limits, pending approvals
+- Invoice data
+
+**What is preserved:**
+- Audit logs (`audit/audit.jsonl`) — for records and compliance
+
 ### `/wallet export [N]`
 Export the last N audit trail entries (default: 20).
 
@@ -357,6 +400,7 @@ Show all available commands.
   /wallet lock — Lock wallet
   /wallet freeze — Emergency freeze all sends
   /wallet unfreeze — Resume sends
+  /wallet delete <passphrase> — Permanently delete wallet
 
 Much command. Very help. Wow. 🐕
 ```

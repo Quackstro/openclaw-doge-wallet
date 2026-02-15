@@ -116,6 +116,7 @@ Send DOGE to your new address. You'll get a Telegram notification when it arrive
 | `/wallet unlock <passphrase>` | Unlock wallet for sending |
 | `/wallet freeze` | Emergency stop all sends |
 | `/wallet unfreeze` | Resume normal operation |
+| `/wallet delete <passphrase>` | Permanently delete wallet (preserves audit logs) |
 | `/wallet approve <id>` | Approve a pending transaction |
 | `/wallet deny <id>` | Deny a pending transaction |
 | `/wallet pending` | Show pending approvals |
