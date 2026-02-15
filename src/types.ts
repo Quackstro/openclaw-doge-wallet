@@ -255,6 +255,7 @@ export type AuditAction =
   | "policy_change"
   | "balance_check"
   | "preflight_check"
+  | "wallet_deleted"
   | "error";
 
 export interface AuditEntry {

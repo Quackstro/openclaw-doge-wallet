@@ -24,6 +24,8 @@ interface CommandContext {
   callbackData?: string;
   data?: string;
   text?: string;
+  accountId?: string;
+  senderId?: string;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any — PluginApi shape is dynamic */
@@ -301,7 +303,27 @@ const dogeWalletPlugin = {
 
     // Wire up the notifier's send function.
     // Try the plugin API sendMessage if available; fall back to exec cli.
-    const sendNotification = async (message: string): Promise<void> => {
+    const sendNotification = async (message: string, tokenOverride?: string): Promise<void> => {
+      // Priority 1: Direct Telegram API call (fastest)
+      const token = tokenOverride ?? telegramBotToken;
+      const target = cfg.notifications.target;
+      if (token && target) {
+        try {
+          const url = `https://api.telegram.org/bot${token}/sendMessage`;
+          const resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: target, text: message, parse_mode: "Markdown" }),
+          });
+          if (resp.ok) return;
+          const body = await resp.text().catch(() => "");
+          log("warn", `doge-wallet: Telegram API notification failed (${resp.status}): ${body}`);
+        } catch (err) {
+          log("warn", `doge-wallet: Telegram API notification error: ${(err as Error).message}`);
+        }
+      }
+
+      // Priority 2: Plugin API sendMessage
       try {
         if (typeof api.sendMessage === "function") {
           await api.sendMessage(message);
@@ -311,7 +333,7 @@ const dogeWalletPlugin = {
         // fall through to CLI
       }
 
-      // Fallback: shell out to OpenClaw CLI
+      // Priority 3: Shell out to OpenClaw CLI (slowest)
       const { execFile } = await import("node:child_process");
       const { promisify } = await import("node:util");
       const execFileP = promisify(execFile);
@@ -333,26 +355,44 @@ const dogeWalletPlugin = {
 
     // Rich message sender (supports inline keyboards for Telegram)
     const sendRichNotification = async (richMsg: RichMessage): Promise<void> => {
-      log("info", `doge-wallet: sendRichNotification called, hasKeyboard=${!!richMsg.keyboard}`);
-      log("info", `doge-wallet: api keys: ${Object.keys(api).join(', ')}`);
+      // Priority 1: Direct Telegram API call (fastest)
+      const token = telegramBotToken;
+      const target = cfg.notifications.target;
+      if (token && target) {
+        try {
+          const payload: any = { chat_id: target, text: richMsg.text };
+          if (richMsg.keyboard && richMsg.keyboard.length > 0) {
+            payload.reply_markup = { inline_keyboard: richMsg.keyboard };
+          }
+          const url = `https://api.telegram.org/bot${token}/sendMessage`;
+          const resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (resp.ok) return;
+          const body = await resp.text().catch(() => "");
+          log("warn", `doge-wallet: Telegram API rich notification failed (${resp.status}): ${body}`);
+        } catch (err) {
+          log("warn", `doge-wallet: Telegram API rich notification error: ${(err as Error).message}`);
+        }
+      }
+
+      // Priority 2: Plugin API
       try {
-        // Use Telegram API directly with buttons support
         if (api.telegram?.sendMessageTelegram) {
           const opts: any = {};
           if (richMsg.keyboard) {
             opts.buttons = richMsg.keyboard;
-            log("info", `doge-wallet: sending with buttons: ${JSON.stringify(richMsg.keyboard)}`);
           }
-          await api.telegram.sendMessageTelegram(cfg.notifications.target, richMsg.text, opts);
-          log("info", "doge-wallet: api.telegram.sendMessageTelegram succeeded");
+          await api.telegram.sendMessageTelegram(target, richMsg.text, opts);
           return;
         }
-        log("warn", "doge-wallet: api.telegram.sendMessageTelegram not available");
       } catch (err) {
-        log("warn", `doge-wallet: telegram send failed: ${(err as Error).message ?? err}, falling back to CLI`);
+        log("warn", `doge-wallet: telegram send failed: ${(err as Error).message ?? err}`);
       }
 
-      // Fallback: shell out to OpenClaw CLI with buttons support
+      // Priority 3: CLI fallback (slowest)
       const { execFile } = await import("node:child_process");
       const { promisify } = await import("node:util");
       const execFileP = promisify(execFile);
@@ -367,7 +407,6 @@ const dogeWalletPlugin = {
           "--message",
           richMsg.text,
         ];
-        // Add buttons if present
         if (richMsg.keyboard && richMsg.keyboard.length > 0) {
           args.push("--buttons", JSON.stringify(richMsg.keyboard));
         }
@@ -1050,17 +1089,15 @@ const dogeWalletPlugin = {
       acceptsArgs: true,
       handler: async (ctx: CommandContext) => {
         const args = ctx.args?.trim() ?? "";
-        const chatId = ctx.chatId ?? ctx.chat?.id ?? (ctx as any).senderId ?? "unknown";
+        const chatId = ctx.chatId ?? ctx.chat?.id ?? ctx.senderId ?? "unknown";
         const messageId = ctx.messageId ?? ctx.message?.message_id?.toString();
 
         // Resolve bot token for this account (multi-bot support)
-        const actId = (ctx as any).accountId as string | undefined;
+        const actId = ctx.accountId;
         const accountBotToken = actId
           ? (api.config?.channels?.telegram as any)?.accounts?.[actId]?.botToken
           : undefined;
 
-        // DEBUG: Log context for message deletion troubleshooting
-        log("info", `doge-wallet: /wallet command ctx — chatId=${chatId} messageId=${messageId} accountId=${actId} hasAccountToken=${!!accountBotToken} ctxKeys=${Object.keys(ctx).join(",")}`);
 
 
         // Check if wallet is initialized
@@ -1089,7 +1126,7 @@ const dogeWalletPlugin = {
           case "init": {
             // SECURITY: Auto-delete message containing passphrase
             if (messageId) deleteUserMessage(chatId, messageId, log, accountBotToken).catch(() => {});
-            return await handleWalletInit(subArgs);
+            return await handleWalletInit(subArgs, accountBotToken);
           }
           case "recover": {
             // SECURITY: Auto-delete message that may contain mnemonic
@@ -1115,6 +1152,12 @@ const dogeWalletPlugin = {
           }
           case "invoice":   return await handleWalletInvoice(subArgs);
           case "invoices":  return await handleWalletInvoices();
+          case "delete":
+          case "destroy": {
+            // SECURITY: Auto-delete message (may contain passphrase)
+            if (messageId) deleteUserMessage(chatId, messageId, log, accountBotToken).catch(() => {});
+            return await handleWalletDelete(subArgs);
+          }
           default:
             return {
               text:
@@ -1189,6 +1232,12 @@ const dogeWalletPlugin = {
         const chatId = ctx.chatId ?? ctx.chat?.id ?? "unknown";
         const callbackData = ctx.callbackData ?? ctx.data;
 
+        // Resolve bot token for this account (multi-bot support)
+        const actId = ctx.accountId;
+        const tokenOverride = actId
+          ? (api.config?.channels?.telegram as any)?.accounts?.[actId]?.botToken
+          : undefined;
+
         const flowResult = await onboardingFlow.handleCallback({
           chatId,
           callbackData,
@@ -1199,17 +1248,14 @@ const dogeWalletPlugin = {
         }
 
         // SECURITY: Auto-delete the bot's mnemonic message when user confirms backup.
-        // On Telegram callback queries, ctx.message.message_id is the message containing
-        // the inline button — which is the mnemonic display message itself.
         if (flowResult.deleteBotMessageId) {
-          deleteUserMessage(chatId, flowResult.deleteBotMessageId, log).catch(() => {
+          deleteUserMessage(chatId, flowResult.deleteBotMessageId, log, tokenOverride).catch(() => {
             log("warn", "doge-wallet: failed to auto-delete mnemonic message — user should delete manually");
           });
         } else if (callbackData === "doge:onboard:phrase_saved") {
-          // Fallback: delete the message that contained the "I've Written It Down" button
           const btnMsgId = ctx.message?.message_id?.toString();
           if (btnMsgId) {
-            deleteUserMessage(chatId, btnMsgId, log).catch(() => {
+            deleteUserMessage(chatId, btnMsgId, log, tokenOverride).catch(() => {
               log("warn", "doge-wallet: failed to auto-delete mnemonic message — user should delete manually");
             });
           }
@@ -1268,10 +1314,15 @@ const dogeWalletPlugin = {
         const text = ctx.text ?? ctx.message?.text ?? "";
         const messageId = ctx.messageId ?? ctx.message?.message_id?.toString();
 
+        // Resolve bot token for this account (multi-bot support)
+        const actId = ctx.accountId;
+        const tokenOverride = actId
+          ? (api.config?.channels?.telegram as any)?.accounts?.[actId]?.botToken
+          : undefined;
+
         // Check if user is in onboarding flow
         const isOnboarding = await onboardingFlow.isOnboarding(chatId);
         if (!isOnboarding) {
-          // Not in onboarding — let other handlers process
           return null;
         }
 
@@ -1283,14 +1334,12 @@ const dogeWalletPlugin = {
         });
 
         if (!flowResult) {
-          // No action needed — let other handlers process
           return null;
         }
 
-        // Delete the user's message if requested (passphrase security)
+        // SECURITY: Delete the user's message (passphrase)
         if (flowResult.deleteMessageId && messageId) {
-          // Note: message handler context doesn't have accountId yet
-          deleteUserMessage(chatId, messageId, log).catch(() => {});
+          deleteUserMessage(chatId, messageId, log, tokenOverride).catch(() => {});
         }
 
         return formatOnboardingResult(flowResult);
@@ -1317,7 +1366,7 @@ const dogeWalletPlugin = {
       return { text: formatDashboard(dashData) };
     }
 
-    async function handleWalletInit(passphrase: string) {
+    async function handleWalletInit(passphrase: string, tokenOverride?: string) {
       if (!passphrase) {
         return {
           text:
@@ -1360,7 +1409,8 @@ const dogeWalletPlugin = {
             `${result.mnemonic}\n\n` +
             `━━━━━━━━━━━━━━━━━━━━━━\n` +
             `Address: ${result.address}\n` +
-            `Network: ${cfg.network}`
+            `Network: ${cfg.network}`,
+            tokenOverride,
           );
         } catch (notifyErr) {
           log("error", `doge-wallet: CRITICAL - failed to deliver mnemonic via DM: ${(notifyErr as Error).message}`);
@@ -1842,6 +1892,84 @@ const dogeWalletPlugin = {
       return { text };
     }
 
+    async function handleWalletDelete(args: string) {
+      const passphrase = args.trim();
+      if (!passphrase) {
+        return {
+          text:
+            "🐕 Delete Wallet\n" +
+            "━━━━━━━━━━━━━━━━\n\n" +
+            "⚠️ This permanently destroys your wallet keystore, UTXO cache, and onboarding state.\n" +
+            "Audit logs are preserved for records.\n\n" +
+            "⛔ If you haven't backed up your mnemonic, your funds will be UNRECOVERABLE.\n\n" +
+            "Usage: `/wallet delete <passphrase>`\n" +
+            "Your passphrase is required to confirm deletion.",
+        };
+      }
+
+      // Verify wallet exists
+      const initialized = await walletManager.isInitialized();
+      if (!initialized) {
+        return { text: "🐕 No wallet to delete — none is configured." };
+      }
+
+      // Verify passphrase by attempting unlock
+      try {
+        await walletManager.unlock(passphrase);
+      } catch {
+        return { text: "❌ Wrong passphrase. Wallet delete aborted." };
+      }
+
+      // Lock wallet before deletion
+      walletManager.lock();
+
+      // Get balance warning
+      const balance = utxoManager.getBalance();
+      const totalDoge = koinuToDoge(balance.confirmed + balance.unconfirmed);
+
+      // Audit the deletion
+      await auditLog.logAudit({
+        action: "wallet_deleted",
+        initiatedBy: "owner",
+        reason: totalDoge > 0
+          ? `Wallet deleted with ${formatDoge(totalDoge)} DOGE remaining`
+          : "Wallet deleted (zero balance)",
+      });
+
+      // Delete everything in the data dir EXCEPT the audit directory
+      const { join } = await import("node:path");
+      const { rmSync, existsSync, readdirSync } = await import("node:fs");
+
+      let deleted = 0;
+      if (existsSync(resolvedDataDir)) {
+        const entries = readdirSync(resolvedDataDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name === "audit") continue; // preserve audit logs
+          const fullPath = join(resolvedDataDir, entry.name);
+          try {
+            rmSync(fullPath, { recursive: true });
+            deleted++;
+          } catch (err: any) {
+            log("warn", `doge-wallet: failed to delete ${fullPath}: ${err.message}`);
+          }
+        }
+      }
+
+      const balanceWarning = totalDoge > 0
+        ? `\n\n⚠️ Wallet had ${formatDoge(totalDoge)} DOGE. Ensure you have your mnemonic backup to recover funds.`
+        : "";
+
+      return {
+        text:
+          "🐕 Wallet Deleted\n" +
+          "━━━━━━━━━━━━━━━━━\n\n" +
+          `✅ Removed ${deleted} wallet file(s).\n` +
+          "📋 Audit logs preserved.\n" +
+          balanceWarning +
+          "\n\nTo create a new wallet: /wallet init <passphrase>",
+      };
+    }
+
     function handleWalletHelp() {
       return {
         text:
@@ -1868,7 +1996,8 @@ const dogeWalletPlugin = {
           "  /wallet unlock <passphrase> — Unlock wallet\n" +
           "  /wallet lock — Lock wallet\n" +
           "  /wallet freeze — Emergency freeze all sends\n" +
-          "  /wallet unfreeze — Resume sends\n\n" +
+          "  /wallet unfreeze — Resume sends\n" +
+          "  /wallet delete <passphrase> — Permanently delete wallet\n\n" +
           "Much command. Very help. Wow. 🐕",
       };
     }
