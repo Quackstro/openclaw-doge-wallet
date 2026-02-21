@@ -14,3 +14,6 @@ export * from './messages.js';
 
 // Registry operations
 export * from './registry.js';
+
+// HTLC (Hash Time-Locked Contracts)
+export * from './htlc/index.js';
