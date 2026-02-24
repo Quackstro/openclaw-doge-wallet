@@ -24,6 +24,7 @@ export {
   createChannelCloseOpReturn,
   buildCommitmentTx,
   signCommitment,
+  verifyCommitmentSig,
   completeCommitment,
   createInitialCommitment,
   createNextCommitment,

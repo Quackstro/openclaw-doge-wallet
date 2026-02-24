@@ -29,6 +29,7 @@ import {
   createNextCommitment,
   buildCooperativeCloseTx,
   signCommitment,
+  verifyCommitmentSig,
   completeCommitment,
   createSignedCommitment,
 } from "../dist/src/qp/channels/commitment.js";
@@ -714,5 +715,136 @@ describe("Hardening", () => {
 
     const { state: s2 } = createNextCommitment(params, funding, s1, 200_000_000, consumer.addr, provider.addr);
     assert.equal(s2.consumerBalance + s2.providerBalance, funding.depositKoinu);
+  });
+});
+
+// =========================================================================
+// 6. Signature Verification
+// =========================================================================
+
+describe("Signature Verification", () => {
+  it("verifyCommitmentSig accepts valid signature", () => {
+    const ms = createMultisig(consumer.pub, provider.pub);
+    const funding = makeFunding(ms.redeemScript, ms.p2shAddress);
+    const params = makeParams();
+    const { tx } = createInitialCommitment(params, funding, consumer.addr, provider.addr);
+
+    const sig = signCommitment(tx, consumer.privBuf, ms.redeemScript, funding.depositKoinu);
+    assert.ok(verifyCommitmentSig(tx, sig, consumer.pub, ms.redeemScript));
+  });
+
+  it("verifyCommitmentSig rejects wrong key", () => {
+    const ms = createMultisig(consumer.pub, provider.pub);
+    const funding = makeFunding(ms.redeemScript, ms.p2shAddress);
+    const params = makeParams();
+    const { tx } = createInitialCommitment(params, funding, consumer.addr, provider.addr);
+
+    // Sign with consumer, verify against provider → should fail
+    const sig = signCommitment(tx, consumer.privBuf, ms.redeemScript, funding.depositKoinu);
+    assert.equal(verifyCommitmentSig(tx, sig, provider.pub, ms.redeemScript), false);
+  });
+
+  it("verifyCommitmentSig rejects garbage signature", () => {
+    const ms = createMultisig(consumer.pub, provider.pub);
+    const funding = makeFunding(ms.redeemScript, ms.p2shAddress);
+    const params = makeParams();
+    const { tx } = createInitialCommitment(params, funding, consumer.addr, provider.addr);
+
+    const garbage = Buffer.alloc(72, 0xff);
+    assert.equal(verifyCommitmentSig(tx, garbage, consumer.pub, ms.redeemScript), false);
+  });
+
+  it("provider rejects bad consumer sig on refund", async () => {
+    const consumerStorage = new InMemoryChannelStorage();
+    const providerStorage = new InMemoryChannelStorage();
+    const cm = new ChannelConsumerManager(consumerStorage, consumer.pub, consumer.privBuf, consumer.addr);
+    const pm = new ChannelProviderManager(providerStorage, provider.pub, provider.privBuf, provider.addr);
+
+    const { record, multisig } = await cm.createChannel({
+      providerPubkey: provider.pub,
+      depositKoinu: 1_000_000_000,
+      openBlock: 100_000,
+    });
+    const funding = makeFunding(multisig.redeemScript, multisig.p2shAddress);
+    await cm.setFunding(record.id, funding, provider.addr);
+
+    const { record: provRecord } = await pm.acceptChannel({
+      channelId: record.params.channelId,
+      consumerPubkey: consumer.pub,
+      depositKoinu: 1_000_000_000,
+      ttlBlocks: record.params.ttlBlocks,
+      timelockGap: record.params.timelockGap,
+      openBlock: record.params.openBlock,
+      fundingTxId: funding.fundingTxId,
+      fundingOutputIndex: funding.fundingOutputIndex,
+    });
+
+    // Send garbage instead of real consumer sig
+    const garbageSig = Buffer.alloc(72, 0xab);
+    await assert.rejects(
+      () => pm.signRefundCommitment(provRecord.id, garbageSig, consumer.addr),
+      /Invalid consumer signature/
+    );
+  });
+
+  it("consumer rejects bad provider sig on refund open", async () => {
+    const consumerStorage = new InMemoryChannelStorage();
+    const providerStorage = new InMemoryChannelStorage();
+    const cm = new ChannelConsumerManager(consumerStorage, consumer.pub, consumer.privBuf, consumer.addr);
+    const pm = new ChannelProviderManager(providerStorage, provider.pub, provider.privBuf, provider.addr);
+
+    const { record, multisig } = await cm.createChannel({
+      providerPubkey: provider.pub,
+      depositKoinu: 1_000_000_000,
+      openBlock: 100_000,
+    });
+    const funding = makeFunding(multisig.redeemScript, multisig.p2shAddress);
+    await cm.setFunding(record.id, funding, provider.addr);
+
+    // Send garbage provider sig
+    const garbageSig = Buffer.alloc(72, 0xcd);
+    await assert.rejects(
+      () => cm.completeRefundAndOpen(record.id, garbageSig),
+      /Invalid provider signature/
+    );
+  });
+
+  it("consumer rejects bad provider sig on payment", async () => {
+    const consumerStorage = new InMemoryChannelStorage();
+    const providerStorage = new InMemoryChannelStorage();
+    const cm = new ChannelConsumerManager(consumerStorage, consumer.pub, consumer.privBuf, consumer.addr);
+    const pm = new ChannelProviderManager(providerStorage, provider.pub, provider.privBuf, provider.addr);
+
+    // Open a channel
+    const { record, multisig } = await cm.createChannel({
+      providerPubkey: provider.pub,
+      depositKoinu: 1_000_000_000,
+      openBlock: 100_000,
+    });
+    const funding = makeFunding(multisig.redeemScript, multisig.p2shAddress);
+    const { consumerSig: refundSig } = await cm.setFunding(record.id, funding, provider.addr);
+
+    const { record: provRecord } = await pm.acceptChannel({
+      channelId: record.params.channelId,
+      consumerPubkey: consumer.pub,
+      depositKoinu: 1_000_000_000,
+      ttlBlocks: record.params.ttlBlocks,
+      timelockGap: record.params.timelockGap,
+      openBlock: record.params.openBlock,
+      fundingTxId: funding.fundingTxId,
+      fundingOutputIndex: funding.fundingOutputIndex,
+    });
+    const { providerSig } = await pm.signRefundCommitment(provRecord.id, refundSig, consumer.addr);
+    await cm.completeRefundAndOpen(record.id, providerSig);
+
+    // Make a payment
+    const { state: payState } = await cm.createPayment(record.id, 50_000_000, provider.addr);
+
+    // Try to accept with garbage provider sig
+    const garbageSig = Buffer.alloc(72, 0xef);
+    await assert.rejects(
+      () => cm.acceptPaymentSignature(record.id, payState, garbageSig, provider.addr),
+      /Invalid provider signature/
+    );
   });
 });

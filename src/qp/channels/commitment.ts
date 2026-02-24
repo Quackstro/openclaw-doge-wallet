@@ -19,7 +19,8 @@ import { DEFAULT_CLOSE_FEE_KOINU, DUST_THRESHOLD_KOINU } from './types.js';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const bitcore = require('bitcore-lib-doge');
-const { Transaction, Script, PrivateKey } = bitcore;
+const { Transaction, Script, PrivateKey, PublicKey } = bitcore;
+const CryptoSignature = bitcore.crypto.Signature;
 
 /**
  * Calculate timelock block for a commitment
@@ -184,6 +185,32 @@ export function signCommitment(
     sighash.toDER(),
     Buffer.from([Transaction.Signature.SIGHASH_ALL]),
   ]);
+}
+
+/**
+ * Verify a commitment signature against a public key
+ * 
+ * @returns true if the signature is valid for the given tx + pubkey
+ */
+export function verifyCommitmentSig(
+  tx: typeof Transaction,
+  sig: Buffer,
+  pubkey: Buffer,
+  redeemScript: Buffer
+): boolean {
+  try {
+    const cryptoSig = CryptoSignature.fromTxFormat(sig);
+    const pubKey = PublicKey.fromBuffer(pubkey);
+    return Transaction.Sighash.verify(
+      tx,
+      cryptoSig,
+      pubKey,
+      0,
+      Script.fromBuffer(redeemScript)
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

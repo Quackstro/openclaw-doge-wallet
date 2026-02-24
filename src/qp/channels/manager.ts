@@ -9,6 +9,7 @@ import {
   createInitialCommitment,
   createNextCommitment,
   signCommitment,
+  verifyCommitmentSig,
   completeCommitment,
   createSignedCommitment,
   txFromSignedCommitment,
@@ -297,6 +298,15 @@ export class ChannelConsumerManager extends BaseChannelManager {
       throw new Error(`Channel not found or not ready: ${id}`);
     }
 
+    // Verify provider's signature on the refund commitment
+    const refundTx = txFromSignedCommitment(record.refundCommitment);
+    const providerSigValid = verifyCommitmentSig(
+      refundTx, providerSig, record.params.providerPubkey, record.funding.redeemScript
+    );
+    if (!providerSigValid) {
+      throw new Error('Invalid provider signature on refund commitment');
+    }
+
     // Add provider signature
     record.refundCommitment.providerSig = providerSig;
     record.refundCommitment.isComplete = true;
@@ -365,6 +375,14 @@ export class ChannelConsumerManager extends BaseChannelManager {
       providerAddress
     );
 
+    // Verify provider's signature before accepting
+    const providerSigValid = verifyCommitmentSig(
+      tx, providerSig, record.params.providerPubkey, record.funding.redeemScript
+    );
+    if (!providerSigValid) {
+      throw new Error('Invalid provider signature on payment commitment');
+    }
+
     // Sign it
     const consumerSig = this.signCommitmentTx(tx, record.funding);
 
@@ -431,6 +449,14 @@ export class ChannelConsumerManager extends BaseChannelManager {
     );
 
     const consumerSig = this.signCommitmentTx(closeTx, record.funding);
+
+    // Verify provider's close signature
+    const providerSigValid = verifyCommitmentSig(
+      closeTx, providerSig, record.params.providerPubkey, record.funding.redeemScript
+    );
+    if (!providerSigValid) {
+      throw new Error('Invalid provider signature on cooperative close');
+    }
 
     // Complete with both signatures
     completeCommitment(
@@ -585,6 +611,14 @@ export class ChannelProviderManager extends BaseChannelManager {
       this.address
     );
 
+    // Verify consumer's signature before accepting
+    const consumerSigValid = verifyCommitmentSig(
+      tx, consumerSig, record.params.consumerPubkey, record.funding.redeemScript
+    );
+    if (!consumerSigValid) {
+      throw new Error('Invalid consumer signature on refund commitment');
+    }
+
     // Sign it
     const providerSig = this.signCommitmentTx(tx, record.funding);
 
@@ -637,6 +671,14 @@ export class ChannelProviderManager extends BaseChannelManager {
       consumerAddress,
       this.address
     );
+
+    // Verify consumer's signature
+    const consumerSigValid = verifyCommitmentSig(
+      tx, consumerSig, record.params.consumerPubkey, record.funding.redeemScript
+    );
+    if (!consumerSigValid) {
+      throw new Error('Invalid consumer signature on payment commitment');
+    }
 
     const providerSig = this.signCommitmentTx(tx, record.funding);
 
