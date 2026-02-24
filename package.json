@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "test": "node --test tests/*.test.ts",
     "prepublishOnly": "npm run build"
   },
   "openclaw": {

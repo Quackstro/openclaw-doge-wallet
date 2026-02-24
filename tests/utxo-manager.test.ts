@@ -9,8 +9,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { UtxoManager } from "../src/utxo/manager.js";
-import type { UTXO, DogeApiProvider } from "../src/types.js";
+import { UtxoManager } from "../dist/src/utxo/manager.js";
+import type { UTXO, DogeApiProvider } from "../dist/src/types.js";
 
 function makeUtxo(partial: Partial<UTXO> = {}): UTXO {
   return {

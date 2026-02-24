@@ -28,9 +28,9 @@ describe("parseDogeConfig", () => {
     assert.equal(cfg.api.primary, "blockcypher");
   });
 
-  it("security.autoLockMs default is 300000", () => {
+  it("security field is not present (removed)", () => {
     const cfg = parseDogeConfig({});
-    assert.equal(cfg.security.autoLockMs, 300_000);
+    assert.equal(cfg.security, undefined);
   });
 
   it("invalid network throws", () => {
@@ -54,8 +54,8 @@ describe("parseDogeConfig", () => {
     );
   });
 
-  it("UTXO refreshIntervalSeconds default is 600", () => {
+  it("UTXO refreshIntervalSeconds default is 180", () => {
     const cfg = parseDogeConfig({});
-    assert.equal(cfg.utxo.refreshIntervalSeconds, 600);
+    assert.equal(cfg.utxo.refreshIntervalSeconds, 180);
   });
 });
