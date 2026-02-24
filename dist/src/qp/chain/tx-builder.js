@@ -141,10 +141,16 @@ export function signTx(tx, privateKeyBuf) {
     return tx;
 }
 /**
- * Serialize a transaction for broadcasting.
+ * Serialize a transaction for broadcasting with structural validation.
+ * Disables fee checks (QP txs have non-standard fee ratios) but validates
+ * output amounts, input completeness, etc.
  */
 export function serializeTx(tx) {
-    return tx.uncheckedSerialize();
+    return tx.checkedSerialize({
+        disableSmallFees: true,
+        disableLargeFees: true,
+        disableIsFullySigned: true,
+    });
 }
 /**
  * Broadcast a signed transaction.

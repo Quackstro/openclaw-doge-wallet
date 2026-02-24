@@ -67,6 +67,11 @@ declare abstract class BaseChannelManager {
      * Get channels that have already expired
      */
     getExpiredChannels(currentBlock: number): Promise<ChannelRecord[]>;
+    /**
+     * Zero out sensitive key material.
+     * Call this when the manager is no longer needed.
+     */
+    destroy(): void;
 }
 /**
  * Channel manager for consumer (channel funder)
@@ -87,7 +92,8 @@ export declare class ChannelConsumerManager extends BaseChannelManager {
         multisig: ReturnType<typeof createMultisig>;
     }>;
     /**
-     * Set funding info after funding tx is broadcast
+     * Set funding info after funding tx is broadcast.
+     * Locked per-channel to prevent concurrent state mutations.
      */
     setFunding(id: string, funding: ChannelFunding, providerAddress: string): Promise<{
         record: ChannelRecord;
@@ -95,36 +101,42 @@ export declare class ChannelConsumerManager extends BaseChannelManager {
         consumerSig: Buffer;
     }>;
     /**
-     * Complete refund commitment with provider's signature and mark channel open
+     * Complete refund commitment with provider's signature and mark channel open.
+     * Locked per-channel.
      */
     completeRefundAndOpen(id: string, providerSig: Buffer): Promise<ChannelRecord>;
     /**
-     * Create a payment (new commitment)
+     * Create a payment (new commitment).
+     * Locked to prevent concurrent payment creation on the same channel.
      */
     createPayment(id: string, paymentKoinu: number, providerAddress: string): Promise<{
         state: CommitmentState;
         consumerSig: Buffer;
     }>;
     /**
-     * Accept provider's signature for a payment and update state
+     * Accept provider's signature for a payment and update state.
+     * Locked per-channel.
      */
     acceptPaymentSignature(id: string, state: CommitmentState, providerSig: Buffer, providerAddress: string): Promise<ChannelRecord>;
     /**
-     * Initiate cooperative close
+     * Initiate cooperative close.
+     * Locked per-channel.
      */
     initiateCooperativeClose(id: string, providerAddress: string): Promise<{
         closeTx: typeof Transaction;
         consumerSig: Buffer;
     }>;
     /**
-     * Complete cooperative close with provider's signature
+     * Complete cooperative close with provider's signature.
+     * Locked per-channel. Uses checked serialization for broadcast.
      */
     completeCooperativeClose(id: string, providerSig: Buffer, providerAddress: string): Promise<{
         closeTxHex: string;
         closeTxId: string;
     }>;
     /**
-     * Unilateral close (broadcast latest commitment)
+     * Unilateral close (broadcast latest commitment).
+     * Locked per-channel.
      */
     unilateralClose(id: string): Promise<{
         closeTxHex: string;
@@ -153,21 +165,24 @@ export declare class ChannelProviderManager extends BaseChannelManager {
         multisig: ReturnType<typeof createMultisig>;
     }>;
     /**
-     * Sign refund commitment and return signature
+     * Sign refund commitment and return signature.
+     * Locked per-channel.
      */
     signRefundCommitment(id: string, consumerSig: Buffer, consumerAddress: string): Promise<{
         record: ChannelRecord;
         providerSig: Buffer;
     }>;
     /**
-     * Accept a payment and return signature
+     * Accept a payment and return signature.
+     * Locked per-channel.
      */
     acceptPayment(id: string, state: CommitmentState, consumerSig: Buffer, consumerAddress: string): Promise<{
         providerSig: Buffer;
         record: ChannelRecord;
     }>;
     /**
-     * Sign cooperative close
+     * Sign cooperative close.
+     * Locked per-channel. Uses checked serialization for broadcast.
      */
     signCooperativeClose(id: string, consumerAddress: string): Promise<{
         providerSig: Buffer;
@@ -175,7 +190,8 @@ export declare class ChannelProviderManager extends BaseChannelManager {
         closeTxId: string;
     }>;
     /**
-     * Unilateral close (broadcast latest commitment)
+     * Unilateral close (broadcast latest commitment).
+     * Locked per-channel.
      */
     unilateralClose(id: string): Promise<{
         closeTxHex: string;

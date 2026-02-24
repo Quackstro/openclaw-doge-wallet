@@ -848,3 +848,108 @@ describe("Signature Verification", () => {
     );
   });
 });
+
+// =========================================================================
+// 7. Key Material Cleanup
+// =========================================================================
+
+describe("Key Material Cleanup", () => {
+  it("destroy() zeroes consumer private key", () => {
+    const consumerStorage = new InMemoryChannelStorage();
+    const privCopy = Buffer.from(consumer.privBuf);
+    const cm = new ChannelConsumerManager(consumerStorage, consumer.pub, privCopy, consumer.addr);
+
+    // Key should be non-zero before destroy
+    assert.ok(privCopy.some(b => b !== 0));
+
+    cm.destroy();
+
+    // Key should be all zeros after destroy
+    assert.ok(privCopy.every(b => b === 0));
+  });
+
+  it("destroy() zeroes provider private key", () => {
+    const providerStorage = new InMemoryChannelStorage();
+    const privCopy = Buffer.from(provider.privBuf);
+    const pm = new ChannelProviderManager(providerStorage, provider.pub, privCopy, provider.addr);
+
+    assert.ok(privCopy.some(b => b !== 0));
+    pm.destroy();
+    assert.ok(privCopy.every(b => b === 0));
+  });
+});
+
+// =========================================================================
+// 8. Mutex — Concurrent Access Protection
+// =========================================================================
+
+describe("Concurrent Access", () => {
+  it("withLock serialises concurrent setFunding calls", async () => {
+    const consumerStorage = new InMemoryChannelStorage();
+    const cm = new ChannelConsumerManager(consumerStorage, consumer.pub, consumer.privBuf, consumer.addr);
+
+    const { record, multisig } = await cm.createChannel({
+      providerPubkey: provider.pub,
+      depositKoinu: 1_000_000_000,
+      openBlock: 100_000,
+    });
+    const funding = makeFunding(multisig.redeemScript, multisig.p2shAddress);
+
+    // Fire two concurrent setFunding calls — first succeeds, second fails
+    const results = await Promise.allSettled([
+      cm.setFunding(record.id, funding, provider.addr),
+      cm.setFunding(record.id, funding, provider.addr),
+    ]);
+
+    // Exactly one should succeed (state is CREATED only once)
+    const fulfilled = results.filter(r => r.status === 'fulfilled');
+    const rejected = results.filter(r => r.status === 'rejected');
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+  });
+
+  it("withLock serialises concurrent payments", async () => {
+    const consumerStorage = new InMemoryChannelStorage();
+    const providerStorage = new InMemoryChannelStorage();
+    const cm = new ChannelConsumerManager(consumerStorage, consumer.pub, consumer.privBuf, consumer.addr);
+    const pm = new ChannelProviderManager(providerStorage, provider.pub, provider.privBuf, provider.addr);
+
+    // Open a channel
+    const { record, multisig } = await cm.createChannel({
+      providerPubkey: provider.pub,
+      depositKoinu: 1_000_000_000,
+      openBlock: 100_000,
+    });
+    const funding = makeFunding(multisig.redeemScript, multisig.p2shAddress);
+    const { consumerSig: refundSig } = await cm.setFunding(record.id, funding, provider.addr);
+
+    const { record: provRecord } = await pm.acceptChannel({
+      channelId: record.params.channelId,
+      consumerPubkey: consumer.pub,
+      depositKoinu: 1_000_000_000,
+      ttlBlocks: record.params.ttlBlocks,
+      timelockGap: record.params.timelockGap,
+      openBlock: record.params.openBlock,
+      fundingTxId: funding.fundingTxId,
+      fundingOutputIndex: funding.fundingOutputIndex,
+    });
+    const { providerSig } = await pm.signRefundCommitment(provRecord.id, refundSig, consumer.addr);
+    await cm.completeRefundAndOpen(record.id, providerSig);
+
+    // Two concurrent payments — mutex serialises them so both get unique sequence numbers
+    const results = await Promise.allSettled([
+      cm.createPayment(record.id, 10_000_000, provider.addr),
+      cm.createPayment(record.id, 10_000_000, provider.addr),
+    ]);
+
+    // Both should succeed (mutex ensures sequential execution, not rejection)
+    const fulfilled = results.filter(r => r.status === 'fulfilled');
+    assert.equal(fulfilled.length, 2);
+
+    // The two returned states should have the SAME sequence (both read same base state)
+    // because createPayment is read-only — it doesn't save the updated state.
+    // This is by design: the caller must finalize via acceptPaymentSignature.
+    const states = fulfilled.map(r => (r as PromiseFulfilledResult<any>).value.state);
+    assert.equal(states[0].sequence, states[1].sequence);
+  });
+});

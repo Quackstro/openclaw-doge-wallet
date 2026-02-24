@@ -32,6 +32,27 @@ const require = createRequire(import.meta.url);
 const bitcore = require('bitcore-lib-doge');
 const { Transaction } = bitcore;
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Serialize a transaction for broadcasting with structural validation.
+ * Disables fee and signing checks (cooperative close txs may not be fully
+ * signed at serialization time) but validates output amounts, inputs, etc.
+ */
+function serializeForBroadcast(tx: typeof Transaction): string {
+  return tx.checkedSerialize({
+    disableSmallFees: true,
+    disableLargeFees: true,
+    disableIsFullySigned: true,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Storage
+// ---------------------------------------------------------------------------
+
 /**
  * Storage interface for channel records
  */
@@ -90,6 +111,10 @@ export class InMemoryChannelStorage implements ChannelStorage {
     return this.locks.get(id)!.runExclusive(fn);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Base
+// ---------------------------------------------------------------------------
 
 /**
  * Base channel manager with shared functionality
@@ -169,7 +194,19 @@ abstract class BaseChannelManager {
       return currentBlock >= expiresAt;
     });
   }
+
+  /**
+   * Zero out sensitive key material.
+   * Call this when the manager is no longer needed.
+   */
+  destroy(): void {
+    this.privkey.fill(0);
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Consumer Manager
+// ---------------------------------------------------------------------------
 
 /**
  * Channel manager for consumer (channel funder)
@@ -252,7 +289,8 @@ export class ChannelConsumerManager extends BaseChannelManager {
   }
 
   /**
-   * Set funding info after funding tx is broadcast
+   * Set funding info after funding tx is broadcast.
+   * Locked per-channel to prevent concurrent state mutations.
    */
   async setFunding(
     id: string,
@@ -263,76 +301,82 @@ export class ChannelConsumerManager extends BaseChannelManager {
     refundCommitment: SignedCommitment;
     consumerSig: Buffer;
   }> {
-    const record = await this.storage.load(id);
-    if (!record) {
-      throw new Error(`Channel not found: ${id}`);
-    }
-    if (record.state !== ChannelState.CREATED) {
-      throw new Error(`Cannot set funding: channel is in state '${record.state}', expected 'created'`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record) {
+        throw new Error(`Channel not found: ${id}`);
+      }
+      if (record.state !== ChannelState.CREATED) {
+        throw new Error(`Cannot set funding: channel is in state '${record.state}', expected 'created'`);
+      }
 
-    // Validate funding txId format
-    if (!/^[0-9a-fA-F]{64}$/.test(funding.fundingTxId)) {
-      throw new Error('Invalid funding txId: must be 64 hex characters');
-    }
+      // Validate funding txId format
+      if (!/^[0-9a-fA-F]{64}$/.test(funding.fundingTxId)) {
+        throw new Error('Invalid funding txId: must be 64 hex characters');
+      }
 
-    // Create initial/refund commitment
-    const { state, tx } = createInitialCommitment(
-      record.params,
-      funding,
-      this.address,
-      providerAddress
-    );
+      // Create initial/refund commitment
+      const { state, tx } = createInitialCommitment(
+        record.params,
+        funding,
+        this.address,
+        providerAddress
+      );
 
-    // Sign refund commitment
-    const consumerSig = this.signCommitmentTx(tx, funding);
+      // Sign refund commitment
+      const consumerSig = this.signCommitmentTx(tx, funding);
 
-    const refundCommitment = createSignedCommitment(state, tx, consumerSig, undefined);
+      const refundCommitment = createSignedCommitment(state, tx, consumerSig, undefined);
 
-    // Update record
-    record.funding = funding;
-    record.state = ChannelState.FUNDING_PENDING;
-    record.refundCommitment = refundCommitment;
-    record.latestCommitment = refundCommitment;
-    record.updatedAt = Date.now();
+      // Update record
+      record.funding = funding;
+      record.state = ChannelState.FUNDING_PENDING;
+      record.refundCommitment = refundCommitment;
+      record.latestCommitment = refundCommitment;
+      record.updatedAt = Date.now();
 
-    await this.storage.save(record);
+      await this.storage.save(record);
 
-    return { record, refundCommitment, consumerSig };
+      return { record, refundCommitment, consumerSig };
+    });
   }
 
   /**
-   * Complete refund commitment with provider's signature and mark channel open
+   * Complete refund commitment with provider's signature and mark channel open.
+   * Locked per-channel.
    */
   async completeRefundAndOpen(id: string, providerSig: Buffer): Promise<ChannelRecord> {
-    const record = await this.storage.load(id);
-    if (!record || !record.refundCommitment || !record.funding) {
-      throw new Error(`Channel not found or not ready: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || !record.refundCommitment || !record.funding) {
+        throw new Error(`Channel not found or not ready: ${id}`);
+      }
 
-    // Verify provider's signature on the refund commitment
-    const refundTx = txFromSignedCommitment(record.refundCommitment);
-    const providerSigValid = verifyCommitmentSig(
-      refundTx, providerSig, record.params.providerPubkey, record.funding.redeemScript
-    );
-    if (!providerSigValid) {
-      throw new Error('Invalid provider signature on refund commitment');
-    }
+      // Verify provider's signature on the refund commitment
+      const refundTx = txFromSignedCommitment(record.refundCommitment);
+      const providerSigValid = verifyCommitmentSig(
+        refundTx, providerSig, record.params.providerPubkey, record.funding.redeemScript
+      );
+      if (!providerSigValid) {
+        throw new Error('Invalid provider signature on refund commitment');
+      }
 
-    // Add provider signature
-    record.refundCommitment.providerSig = providerSig;
-    record.refundCommitment.isComplete = true;
-    record.latestCommitment = record.refundCommitment;
-    record.state = ChannelState.OPEN;
-    record.updatedAt = Date.now();
+      // Add provider signature
+      record.refundCommitment.providerSig = providerSig;
+      record.refundCommitment.isComplete = true;
+      record.latestCommitment = record.refundCommitment;
+      record.state = ChannelState.OPEN;
+      record.updatedAt = Date.now();
 
-    await this.storage.save(record);
+      await this.storage.save(record);
 
-    return record;
+      return record;
+    });
   }
 
   /**
-   * Create a payment (new commitment)
+   * Create a payment (new commitment).
+   * Locked to prevent concurrent payment creation on the same channel.
    */
   async createPayment(
     id: string,
@@ -342,29 +386,32 @@ export class ChannelConsumerManager extends BaseChannelManager {
     state: CommitmentState;
     consumerSig: Buffer;
   }> {
-    const record = await this.storage.load(id);
-    if (!record || record.state !== ChannelState.OPEN || !record.funding || !record.latestCommitment) {
-      throw new Error(`Channel not open: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || record.state !== ChannelState.OPEN || !record.funding || !record.latestCommitment) {
+        throw new Error(`Channel not open: ${id}`);
+      }
 
-    // Create next commitment
-    const { state, tx } = createNextCommitment(
-      record.params,
-      record.funding,
-      record.latestCommitment,
-      paymentKoinu,
-      this.address,
-      providerAddress
-    );
+      // Create next commitment
+      const { state, tx } = createNextCommitment(
+        record.params,
+        record.funding,
+        record.latestCommitment,
+        paymentKoinu,
+        this.address,
+        providerAddress
+      );
 
-    // Sign it
-    const consumerSig = this.signCommitmentTx(tx, record.funding);
+      // Sign it
+      const consumerSig = this.signCommitmentTx(tx, record.funding);
 
-    return { state, consumerSig };
+      return { state, consumerSig };
+    });
   }
 
   /**
-   * Accept provider's signature for a payment and update state
+   * Accept provider's signature for a payment and update state.
+   * Locked per-channel.
    */
   async acceptPaymentSignature(
     id: string,
@@ -372,43 +419,46 @@ export class ChannelConsumerManager extends BaseChannelManager {
     providerSig: Buffer,
     providerAddress: string
   ): Promise<ChannelRecord> {
-    const record = await this.storage.load(id);
-    if (!record || !record.funding) {
-      throw new Error(`Channel not found: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || !record.funding) {
+        throw new Error(`Channel not found: ${id}`);
+      }
 
-    // Rebuild transaction
-    const { tx } = createNextCommitment(
-      record.params,
-      record.funding,
-      record.latestCommitment!,
-      state.providerBalance - (record.latestCommitment?.providerBalance || 0),
-      this.address,
-      providerAddress
-    );
+      // Rebuild transaction
+      const { tx } = createNextCommitment(
+        record.params,
+        record.funding,
+        record.latestCommitment!,
+        state.providerBalance - (record.latestCommitment?.providerBalance || 0),
+        this.address,
+        providerAddress
+      );
 
-    // Verify provider's signature before accepting
-    const providerSigValid = verifyCommitmentSig(
-      tx, providerSig, record.params.providerPubkey, record.funding.redeemScript
-    );
-    if (!providerSigValid) {
-      throw new Error('Invalid provider signature on payment commitment');
-    }
+      // Verify provider's signature before accepting
+      const providerSigValid = verifyCommitmentSig(
+        tx, providerSig, record.params.providerPubkey, record.funding.redeemScript
+      );
+      if (!providerSigValid) {
+        throw new Error('Invalid provider signature on payment commitment');
+      }
 
-    // Sign it
-    const consumerSig = this.signCommitmentTx(tx, record.funding);
+      // Sign it
+      const consumerSig = this.signCommitmentTx(tx, record.funding);
 
-    // Update record
-    record.latestCommitment = createSignedCommitment(state, tx, consumerSig, providerSig);
-    record.updatedAt = Date.now();
+      // Update record
+      record.latestCommitment = createSignedCommitment(state, tx, consumerSig, providerSig);
+      record.updatedAt = Date.now();
 
-    await this.storage.save(record);
+      await this.storage.save(record);
 
-    return record;
+      return record;
+    });
   }
 
   /**
-   * Initiate cooperative close
+   * Initiate cooperative close.
+   * Locked per-channel.
    */
   async initiateCooperativeClose(
     id: string,
@@ -417,100 +467,112 @@ export class ChannelConsumerManager extends BaseChannelManager {
     closeTx: typeof Transaction;
     consumerSig: Buffer;
   }> {
-    const record = await this.storage.load(id);
-    if (!record || record.state !== ChannelState.OPEN || !record.funding || !record.latestCommitment) {
-      throw new Error(`Channel not open: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || record.state !== ChannelState.OPEN || !record.funding || !record.latestCommitment) {
+        throw new Error(`Channel not open: ${id}`);
+      }
 
-    const closeTx = buildCooperativeCloseTx(
-      record.params,
-      record.funding,
-      record.latestCommitment,
-      this.address,
-      providerAddress
-    );
+      const closeTx = buildCooperativeCloseTx(
+        record.params,
+        record.funding,
+        record.latestCommitment,
+        this.address,
+        providerAddress
+      );
 
-    const consumerSig = this.signCommitmentTx(closeTx, record.funding);
+      const consumerSig = this.signCommitmentTx(closeTx, record.funding);
 
-    record.state = ChannelState.CLOSING;
-    record.updatedAt = Date.now();
-    await this.storage.save(record);
+      record.state = ChannelState.CLOSING;
+      record.updatedAt = Date.now();
+      await this.storage.save(record);
 
-    return { closeTx, consumerSig };
+      return { closeTx, consumerSig };
+    });
   }
 
   /**
-   * Complete cooperative close with provider's signature
+   * Complete cooperative close with provider's signature.
+   * Locked per-channel. Uses checked serialization for broadcast.
    */
   async completeCooperativeClose(
     id: string,
     providerSig: Buffer,
     providerAddress: string
   ): Promise<{ closeTxHex: string; closeTxId: string }> {
-    const record = await this.storage.load(id);
-    if (!record || !record.funding || !record.latestCommitment) {
-      throw new Error(`Channel not found: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || !record.funding || !record.latestCommitment) {
+        throw new Error(`Channel not found: ${id}`);
+      }
 
-    const closeTx = buildCooperativeCloseTx(
-      record.params,
-      record.funding,
-      record.latestCommitment,
-      this.address,
-      providerAddress
-    );
+      const closeTx = buildCooperativeCloseTx(
+        record.params,
+        record.funding,
+        record.latestCommitment,
+        this.address,
+        providerAddress
+      );
 
-    const consumerSig = this.signCommitmentTx(closeTx, record.funding);
+      const consumerSig = this.signCommitmentTx(closeTx, record.funding);
 
-    // Verify provider's close signature
-    const providerSigValid = verifyCommitmentSig(
-      closeTx, providerSig, record.params.providerPubkey, record.funding.redeemScript
-    );
-    if (!providerSigValid) {
-      throw new Error('Invalid provider signature on cooperative close');
-    }
+      // Verify provider's close signature
+      const providerSigValid = verifyCommitmentSig(
+        closeTx, providerSig, record.params.providerPubkey, record.funding.redeemScript
+      );
+      if (!providerSigValid) {
+        throw new Error('Invalid provider signature on cooperative close');
+      }
 
-    // Complete with both signatures
-    completeCommitment(
-      closeTx,
-      consumerSig,
-      providerSig,
-      record.funding.redeemScript,
-      record.params.consumerPubkey,
-      record.params.providerPubkey
-    );
+      // Complete with both signatures
+      completeCommitment(
+        closeTx,
+        consumerSig,
+        providerSig,
+        record.funding.redeemScript,
+        record.params.consumerPubkey,
+        record.params.providerPubkey
+      );
 
-    const closeTxHex = closeTx.uncheckedSerialize();
-    const closeTxId = closeTx.id;
+      const closeTxHex = serializeForBroadcast(closeTx);
+      const closeTxId = closeTx.id;
 
-    record.state = ChannelState.CLOSED_COOPERATIVE;
-    record.closeTxId = closeTxId;
-    record.updatedAt = Date.now();
-    await this.storage.save(record);
+      record.state = ChannelState.CLOSED_COOPERATIVE;
+      record.closeTxId = closeTxId;
+      record.updatedAt = Date.now();
+      await this.storage.save(record);
 
-    return { closeTxHex, closeTxId };
+      return { closeTxHex, closeTxId };
+    });
   }
 
   /**
-   * Unilateral close (broadcast latest commitment)
+   * Unilateral close (broadcast latest commitment).
+   * Locked per-channel.
    */
   async unilateralClose(id: string): Promise<{ closeTxHex: string; closeTxId: string }> {
-    const record = await this.storage.load(id);
-    if (!record || !record.latestCommitment?.isComplete) {
-      throw new Error(`No complete commitment to broadcast: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || !record.latestCommitment?.isComplete) {
+        throw new Error(`No complete commitment to broadcast: ${id}`);
+      }
 
-    const closeTxHex = record.latestCommitment.txHex;
-    const closeTxId = new Transaction(closeTxHex).id;
+      const closeTxHex = record.latestCommitment.txHex;
+      const closeTxId = new Transaction(closeTxHex).id;
 
-    record.state = ChannelState.CLOSED_UNILATERAL_CONSUMER;
-    record.closeTxId = closeTxId;
-    record.updatedAt = Date.now();
-    await this.storage.save(record);
+      record.state = ChannelState.CLOSED_UNILATERAL_CONSUMER;
+      record.closeTxId = closeTxId;
+      record.updatedAt = Date.now();
+      await this.storage.save(record);
 
-    return { closeTxHex, closeTxId };
+      return { closeTxHex, closeTxId };
+    });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Provider Manager
+// ---------------------------------------------------------------------------
 
 /**
  * Channel manager for provider
@@ -600,7 +662,8 @@ export class ChannelProviderManager extends BaseChannelManager {
   }
 
   /**
-   * Sign refund commitment and return signature
+   * Sign refund commitment and return signature.
+   * Locked per-channel.
    */
   async signRefundCommitment(
     id: string,
@@ -610,43 +673,46 @@ export class ChannelProviderManager extends BaseChannelManager {
     record: ChannelRecord;
     providerSig: Buffer;
   }> {
-    const record = await this.storage.load(id);
-    if (!record || !record.funding) {
-      throw new Error(`Channel not found: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || !record.funding) {
+        throw new Error(`Channel not found: ${id}`);
+      }
 
-    // Create initial/refund commitment
-    const { state, tx } = createInitialCommitment(
-      record.params,
-      record.funding,
-      consumerAddress,
-      this.address
-    );
+      // Create initial/refund commitment
+      const { state, tx } = createInitialCommitment(
+        record.params,
+        record.funding,
+        consumerAddress,
+        this.address
+      );
 
-    // Verify consumer's signature before accepting
-    const consumerSigValid = verifyCommitmentSig(
-      tx, consumerSig, record.params.consumerPubkey, record.funding.redeemScript
-    );
-    if (!consumerSigValid) {
-      throw new Error('Invalid consumer signature on refund commitment');
-    }
+      // Verify consumer's signature before accepting
+      const consumerSigValid = verifyCommitmentSig(
+        tx, consumerSig, record.params.consumerPubkey, record.funding.redeemScript
+      );
+      if (!consumerSigValid) {
+        throw new Error('Invalid consumer signature on refund commitment');
+      }
 
-    // Sign it
-    const providerSig = this.signCommitmentTx(tx, record.funding);
+      // Sign it
+      const providerSig = this.signCommitmentTx(tx, record.funding);
 
-    // Store commitment
-    record.refundCommitment = createSignedCommitment(state, tx, consumerSig, providerSig);
-    record.latestCommitment = record.refundCommitment;
-    record.state = ChannelState.OPEN;
-    record.updatedAt = Date.now();
+      // Store commitment
+      record.refundCommitment = createSignedCommitment(state, tx, consumerSig, providerSig);
+      record.latestCommitment = record.refundCommitment;
+      record.state = ChannelState.OPEN;
+      record.updatedAt = Date.now();
 
-    await this.storage.save(record);
+      await this.storage.save(record);
 
-    return { record, providerSig };
+      return { record, providerSig };
+    });
   }
 
   /**
-   * Accept a payment and return signature
+   * Accept a payment and return signature.
+   * Locked per-channel.
    */
   async acceptPayment(
     id: string,
@@ -657,53 +723,56 @@ export class ChannelProviderManager extends BaseChannelManager {
     providerSig: Buffer;
     record: ChannelRecord;
   }> {
-    const record = await this.storage.load(id);
-    if (!record || record.state !== ChannelState.OPEN || !record.funding || !record.latestCommitment) {
-      throw new Error(`Channel not open: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || record.state !== ChannelState.OPEN || !record.funding || !record.latestCommitment) {
+        throw new Error(`Channel not open: ${id}`);
+      }
 
-    // Validate state transition
-    if (state.sequence !== record.latestCommitment.sequence + 1) {
-      throw new Error('Invalid sequence number');
-    }
-    if (state.consumerBalance + state.providerBalance !== record.funding.depositKoinu) {
-      throw new Error('Balance mismatch');
-    }
-    if (state.providerBalance <= record.latestCommitment.providerBalance) {
-      throw new Error('Provider balance must increase');
-    }
+      // Validate state transition
+      if (state.sequence !== record.latestCommitment.sequence + 1) {
+        throw new Error('Invalid sequence number');
+      }
+      if (state.consumerBalance + state.providerBalance !== record.funding.depositKoinu) {
+        throw new Error('Balance mismatch');
+      }
+      if (state.providerBalance <= record.latestCommitment.providerBalance) {
+        throw new Error('Provider balance must increase');
+      }
 
-    // Build and sign the commitment
-    const paymentKoinu = state.providerBalance - record.latestCommitment.providerBalance;
-    const { tx } = createNextCommitment(
-      record.params,
-      record.funding,
-      record.latestCommitment,
-      paymentKoinu,
-      consumerAddress,
-      this.address
-    );
+      // Build and sign the commitment
+      const paymentKoinu = state.providerBalance - record.latestCommitment.providerBalance;
+      const { tx } = createNextCommitment(
+        record.params,
+        record.funding,
+        record.latestCommitment,
+        paymentKoinu,
+        consumerAddress,
+        this.address
+      );
 
-    // Verify consumer's signature
-    const consumerSigValid = verifyCommitmentSig(
-      tx, consumerSig, record.params.consumerPubkey, record.funding.redeemScript
-    );
-    if (!consumerSigValid) {
-      throw new Error('Invalid consumer signature on payment commitment');
-    }
+      // Verify consumer's signature
+      const consumerSigValid = verifyCommitmentSig(
+        tx, consumerSig, record.params.consumerPubkey, record.funding.redeemScript
+      );
+      if (!consumerSigValid) {
+        throw new Error('Invalid consumer signature on payment commitment');
+      }
 
-    const providerSig = this.signCommitmentTx(tx, record.funding);
+      const providerSig = this.signCommitmentTx(tx, record.funding);
 
-    // Update record
-    record.latestCommitment = createSignedCommitment(state, tx, consumerSig, providerSig);
-    record.updatedAt = Date.now();
-    await this.storage.save(record);
+      // Update record
+      record.latestCommitment = createSignedCommitment(state, tx, consumerSig, providerSig);
+      record.updatedAt = Date.now();
+      await this.storage.save(record);
 
-    return { providerSig, record };
+      return { providerSig, record };
+    });
   }
 
   /**
-   * Sign cooperative close
+   * Sign cooperative close.
+   * Locked per-channel. Uses checked serialization for broadcast.
    */
   async signCooperativeClose(
     id: string,
@@ -713,48 +782,53 @@ export class ChannelProviderManager extends BaseChannelManager {
     closeTxHex: string;
     closeTxId: string;
   }> {
-    const record = await this.storage.load(id);
-    if (!record || !record.funding || !record.latestCommitment) {
-      throw new Error(`Channel not found: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || !record.funding || !record.latestCommitment) {
+        throw new Error(`Channel not found: ${id}`);
+      }
 
-    const closeTx = buildCooperativeCloseTx(
-      record.params,
-      record.funding,
-      record.latestCommitment,
-      consumerAddress,
-      this.address
-    );
+      const closeTx = buildCooperativeCloseTx(
+        record.params,
+        record.funding,
+        record.latestCommitment,
+        consumerAddress,
+        this.address
+      );
 
-    const providerSig = this.signCommitmentTx(closeTx, record.funding);
-    const closeTxHex = closeTx.uncheckedSerialize();
-    const closeTxId = closeTx.id;
+      const providerSig = this.signCommitmentTx(closeTx, record.funding);
+      const closeTxHex = serializeForBroadcast(closeTx);
+      const closeTxId = closeTx.id;
 
-    record.state = ChannelState.CLOSED_COOPERATIVE;
-    record.closeTxId = closeTxId;
-    record.updatedAt = Date.now();
-    await this.storage.save(record);
+      record.state = ChannelState.CLOSED_COOPERATIVE;
+      record.closeTxId = closeTxId;
+      record.updatedAt = Date.now();
+      await this.storage.save(record);
 
-    return { providerSig, closeTxHex, closeTxId };
+      return { providerSig, closeTxHex, closeTxId };
+    });
   }
 
   /**
-   * Unilateral close (broadcast latest commitment)
+   * Unilateral close (broadcast latest commitment).
+   * Locked per-channel.
    */
   async unilateralClose(id: string): Promise<{ closeTxHex: string; closeTxId: string }> {
-    const record = await this.storage.load(id);
-    if (!record || !record.latestCommitment?.isComplete) {
-      throw new Error(`No complete commitment to broadcast: ${id}`);
-    }
+    return this.storage.withLock(id, async () => {
+      const record = await this.storage.load(id);
+      if (!record || !record.latestCommitment?.isComplete) {
+        throw new Error(`No complete commitment to broadcast: ${id}`);
+      }
 
-    const closeTxHex = record.latestCommitment.txHex;
-    const closeTxId = new Transaction(closeTxHex).id;
+      const closeTxHex = record.latestCommitment.txHex;
+      const closeTxId = new Transaction(closeTxHex).id;
 
-    record.state = ChannelState.CLOSED_UNILATERAL_PROVIDER;
-    record.closeTxId = closeTxId;
-    record.updatedAt = Date.now();
-    await this.storage.save(record);
+      record.state = ChannelState.CLOSED_UNILATERAL_PROVIDER;
+      record.closeTxId = closeTxId;
+      record.updatedAt = Date.now();
+      await this.storage.save(record);
 
-    return { closeTxHex, closeTxId };
+      return { closeTxHex, closeTxId };
+    });
   }
 }

@@ -80,7 +80,9 @@ export declare function buildRatingTx(params: {
  */
 export declare function signTx(tx: typeof Transaction, privateKeyBuf: Buffer): typeof Transaction;
 /**
- * Serialize a transaction for broadcasting.
+ * Serialize a transaction for broadcasting with structural validation.
+ * Disables fee checks (QP txs have non-standard fee ratios) but validates
+ * output amounts, input completeness, etc.
  */
 export declare function serializeTx(tx: typeof Transaction): string;
 /**
