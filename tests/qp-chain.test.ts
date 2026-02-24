@@ -481,6 +481,7 @@ describe("RegistryWatcher", () => {
 
     const watcher = new RegistryWatcher(provider, undefined, {
       categories: ["general"],
+      minScanIntervalMs: 0, // Disable rate limiting for tests
     });
 
     const newListings = await watcher.scan();
@@ -509,6 +510,7 @@ describe("RegistryWatcher", () => {
 
     const watcher = new RegistryWatcher(provider, undefined, {
       categories: ["compute"],
+      minScanIntervalMs: 0,
     });
     await watcher.scan();
 
@@ -521,7 +523,7 @@ describe("RegistryWatcher", () => {
     const provider = new MockProvider();
     provider.setHeight(150_000);
 
-    const watcher = new RegistryWatcher(provider);
+    const watcher = new RegistryWatcher(provider, undefined, { minScanIntervalMs: 0 });
     const status = await watcher.getChainStatus();
     assert.equal(status.blockHeight, 150_000);
     assert.equal(status.provider, "mock");
@@ -542,7 +544,7 @@ describe("RegistryWatcher", () => {
       ],
     }));
 
-    const watcher = new RegistryWatcher(provider, undefined, { categories: ["general"] });
+    const watcher = new RegistryWatcher(provider, undefined, { categories: ["general"], minScanIntervalMs: 0 });
     await watcher.scan();
     assert.equal(watcher.getDirectory().size, 1);
 
@@ -566,14 +568,14 @@ describe("RegistryWatcher", () => {
       ],
     }));
 
-    const watcher1 = new RegistryWatcher(provider, undefined, { categories: ["general"] });
+    const watcher1 = new RegistryWatcher(provider, undefined, { categories: ["general"], minScanIntervalMs: 0 });
     await watcher1.scan();
     const state = watcher1.getState();
     assert.ok(state.lastScannedBlock["general"] >= 100_000);
     assert.ok(state.lastScanTime > 0);
 
     // Restore state in new watcher
-    const watcher2 = new RegistryWatcher(provider, undefined, { categories: ["general"] });
+    const watcher2 = new RegistryWatcher(provider, undefined, { categories: ["general"], minScanIntervalMs: 0 });
     watcher2.restoreState(state);
     const restored = watcher2.getState();
     assert.equal(restored.lastScannedBlock["general"], state.lastScannedBlock["general"]);

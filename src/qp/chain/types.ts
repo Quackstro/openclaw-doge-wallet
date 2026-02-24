@@ -3,7 +3,7 @@
  * OP_RETURN scanning, registry watching, and transaction building
  */
 
-import type { QPMessage } from '../types.js';
+import type { QPMessage, AdvertiseFlags } from '../types.js';
 import type { QPMessageType } from '../types.js';
 
 /** A decoded QP message found on-chain */
@@ -53,16 +53,7 @@ export interface ServiceListing {
   /** Price unit (0=per-request, etc.) */
   priceUnit: number;
   /** Capability flags */
-  flags: {
-    supportsDirectHtlc: boolean;
-    supportsSideloadHttps: boolean;
-    supportsSideloadLibp2p: boolean;
-    supportsSideloadIpfs: boolean;
-    onlineNow: boolean;
-    supportsPaymentChannel: boolean;
-    acceptsPostPayment: boolean;
-    isCompositeTool: boolean;
-  };
+  flags: AdvertiseFlags;
   /** TTL in blocks */
   ttlBlocks: number;
   /** Metadata description */

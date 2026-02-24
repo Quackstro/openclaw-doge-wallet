@@ -72,16 +72,61 @@ export function serializeMessage(msg: SideloadMessage): Buffer {
   return Buffer.from(JSON.stringify(serializable), 'utf8');
 }
 
+/** Maximum serialized message size (10 MB) */
+const MAX_MESSAGE_SIZE = 10 * 1024 * 1024;
+
+/** Valid message types */
+const VALID_TYPES = new Set<string>(['request', 'response', 'chunk', 'done', 'error']);
+
 /**
  * Deserialize JSON bytes to a SideloadMessage.
+ * Validates schema to prevent prototype pollution and reject malformed data.
  */
 export function deserializeMessage(data: Buffer): SideloadMessage {
+  if (data.length > MAX_MESSAGE_SIZE) {
+    throw new Error(`Message too large: ${data.length} bytes (max ${MAX_MESSAGE_SIZE})`);
+  }
+
   const parsed = JSON.parse(data.toString('utf8'));
+
+  // Validate it's a plain object (prevent prototype pollution)
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('Invalid message: not an object');
+  }
+
+  // Validate required fields
+  if (typeof parsed.v !== 'number' || parsed.v < 1) {
+    throw new Error('Invalid message: missing or invalid version (v)');
+  }
+  if (!VALID_TYPES.has(parsed.t)) {
+    throw new Error(`Invalid message type: ${parsed.t}`);
+  }
+  if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
+    throw new Error('Invalid message: missing id');
+  }
+  if (typeof parsed.ts !== 'number') {
+    throw new Error('Invalid message: missing timestamp (ts)');
+  }
+
+  // Validate optional fields
+  if (parsed.ref !== undefined && typeof parsed.ref !== 'string') {
+    throw new Error('Invalid message: ref must be a string');
+  }
+  if (parsed.seq !== undefined && typeof parsed.seq !== 'number') {
+    throw new Error('Invalid message: seq must be a number');
+  }
 
   // Restore Buffer body from base64
   if (parsed._bodyEncoding === 'base64' && typeof parsed.body === 'string') {
     parsed.body = Buffer.from(parsed.body, 'base64');
     delete parsed._bodyEncoding;
+  }
+
+  // Strip any __proto__ or constructor keys from body if it's an object
+  if (typeof parsed.body === 'object' && parsed.body !== null && !Buffer.isBuffer(parsed.body)) {
+    delete parsed.body.__proto__;
+    delete parsed.body.constructor;
+    delete parsed.body.prototype;
   }
 
   return parsed as SideloadMessage;
@@ -163,6 +208,15 @@ export function wireToEnvelope(wire: Buffer): EncryptedEnvelope {
     ciphertext: Buffer.from(ciphertext),
     tag: Buffer.from(tag),
   };
+}
+
+/**
+ * Zero out sensitive session key material.
+ * Call this when the session is no longer needed.
+ */
+export function destroySession(session: SideloadSession): void {
+  session.sessionKey.fill(0);
+  session.remoteInfo.token.fill(0);
 }
 
 /**

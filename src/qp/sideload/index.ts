@@ -17,6 +17,7 @@ export {
   envelopeToWire,
   wireToEnvelope,
   createSession,
+  destroySession,
 } from './envelope.js';
 
 // Session management

@@ -106,6 +106,16 @@ export function buildAdvertiseTx(params: {
   const opReturnData = buildAdvertiseOpReturn(advertise);
   const dustAmount = 100_000_000; // 1 DOGE dust to registry
 
+  // Validate UTXO sufficiency
+  const totalInput = utxos.reduce((sum, u) => sum + u.amount, 0);
+  const minRequired = dustAmount + feeKoinu;
+  if (totalInput < minRequired) {
+    throw new Error(
+      `Insufficient funds: have ${totalInput} koinu, need at least ${minRequired} koinu ` +
+      `(${dustAmount} dust + ${feeKoinu} fee)`
+    );
+  }
+
   const tx = new Transaction();
 
   // Add inputs
@@ -172,6 +182,15 @@ export function buildRatingTx(params: {
 
   const opReturnData = buildRatingOpReturn(rating);
   const dustAmount = 100_000_000; // 1 DOGE to provider
+
+  // Validate UTXO sufficiency
+  const totalInput = utxos.reduce((sum, u) => sum + u.amount, 0);
+  const minRequired = dustAmount + feeKoinu;
+  if (totalInput < minRequired) {
+    throw new Error(
+      `Insufficient funds: have ${totalInput} koinu, need at least ${minRequired} koinu`
+    );
+  }
 
   const tx = new Transaction();
 

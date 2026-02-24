@@ -127,15 +127,19 @@ export class ServiceDirectory {
 /**
  * Registry Watcher — scans registry addresses and populates a ServiceDirectory
  */
+/** Default minimum interval between scans (60 seconds) */
+const DEFAULT_MIN_SCAN_INTERVAL_MS = 60_000;
+
 export class RegistryWatcher {
   private state: WatcherState;
   private directory: ServiceDirectory;
   private options: Required<WatcherOptions>;
+  private minScanIntervalMs: number;
 
   constructor(
     private provider: DogeApiProvider,
     directory?: ServiceDirectory,
-    options?: WatcherOptions
+    options?: WatcherOptions & { minScanIntervalMs?: number }
   ) {
     this.directory = directory ?? new ServiceDirectory();
     this.options = {
@@ -143,6 +147,7 @@ export class RegistryWatcher {
       minConfirmations: options?.minConfirmations ?? 1,
       txLimit: options?.txLimit ?? 50,
     };
+    this.minScanIntervalMs = options?.minScanIntervalMs ?? DEFAULT_MIN_SCAN_INTERVAL_MS;
     this.state = {
       lastScannedBlock: {},
       lastScanTime: 0,
@@ -167,8 +172,15 @@ export class RegistryWatcher {
   /**
    * Scan all configured registry addresses for new advertisements.
    * Returns newly discovered listings.
+   * Respects minScanIntervalMs to avoid API rate limiting.
    */
   async scan(): Promise<ServiceListing[]> {
+    const now = Date.now();
+    const elapsed = now - this.state.lastScanTime;
+    if (this.state.lastScanTime > 0 && elapsed < this.minScanIntervalMs) {
+      return []; // Too soon — skip scan
+    }
+
     const newListings: ServiceListing[] = [];
 
     for (const category of this.options.categories) {

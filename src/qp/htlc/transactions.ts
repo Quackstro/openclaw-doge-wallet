@@ -313,13 +313,18 @@ export function buildRefundTransaction(params: HTLCRefundParams): typeof Transac
 }
 
 /**
- * Serialize a transaction to hex for broadcasting
- * 
- * Uses uncheckedSerialize to bypass bitcore fee validation — HTLC txs
- * have non-standard fee/size ratios due to script complexity.
+ * Serialize a transaction to hex for broadcasting.
+ *
+ * Uses checkedSerialize with fee check disabled — HTLC txs have
+ * non-standard fee/size ratios due to script complexity, but we still
+ * want other checks (invalid satoshis, output > input, dust).
  */
 export function serializeTransaction(tx: typeof Transaction): string {
-  return tx.uncheckedSerialize();
+  return tx.checkedSerialize({
+    disableSmallFees: true,
+    disableLargeFees: true,
+    disableIsFullySigned: true,
+  });
 }
 
 /**

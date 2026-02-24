@@ -177,8 +177,10 @@ export function paymentWeightedRating(
   let totalWeight = 0;
   let weightedSum = 0;
   for (const r of eligible) {
+    // Clamp rating to valid 1-5 range (on-chain data could be anything 0-255)
+    const clampedRating = Math.max(1, Math.min(5, r.rating));
     const weight = r.paymentKoinu;
-    weightedSum += r.rating * weight;
+    weightedSum += clampedRating * weight;
     totalWeight += weight;
   }
 

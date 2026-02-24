@@ -11,6 +11,7 @@ import {
   envelopeToWire,
   wireToEnvelope,
   createSession,
+  destroySession,
 } from './envelope.js';
 import type {
   SideloadSession,
@@ -185,7 +186,7 @@ export class SessionManager {
   }
 
   /**
-   * Clean up pending requests.
+   * Clean up pending requests and zero session key material.
    */
   destroy(): void {
     for (const [, pending] of this.pending) {
@@ -193,6 +194,7 @@ export class SessionManager {
       pending.reject(new Error('Session destroyed'));
     }
     this.pending.clear();
+    destroySession(this.session);
   }
 
   /** Get count of pending requests */
