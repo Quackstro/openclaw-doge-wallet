@@ -221,17 +221,20 @@ Services are identified by uint16 skill codes:
 - [x] `registry.ts` — Registry address generation
 - [x] Round-trip tests passing
 
-### Phase 2: HTLC Scripts (Planned)
-- [ ] HTLC redeem script builder (Bitcoin Script)
-- [ ] P2SH address generation
-- [ ] Claim/refund transaction builders
-- [ ] HTLC state management
+### Phase 2: HTLC Scripts ✅
+- [x] HTLC redeem script builder (Bitcoin Script with OP_IF/OP_CHECKLOCKTIMEVERIFY)
+- [x] P2SH address generation
+- [x] Claim/refund transaction builders
+- [x] HTLC manager with state machine lifecycle
 
-### Phase 3: Payment Channels (Planned)
-- [ ] 2-of-2 multisig setup
-- [ ] Time-decaying commitment transactions
-- [ ] Cooperative/unilateral close
-- [ ] Channel state persistence
+### Phase 3: Payment Channels ✅
+- [x] 2-of-2 multisig with deterministic key ordering
+- [x] Time-decaying commitment transactions (latest unlocks first)
+- [x] Cooperative and unilateral close paths
+- [x] Consumer + Provider managers with full lifecycle
+- [x] Signature verification on all commitment exchanges
+- [x] Production hardening: balance conservation, timelock guards, dust folding, input validation
+- [x] 44 unit tests across 6 suites
 
 ### Phase 4: Chain Integration (Planned)
 - [ ] OP_RETURN scanner (BlockCypher/SoChain)
@@ -258,11 +261,25 @@ src/qp/
 ├── SPEC.md             # Protocol specification (abridged)
 ├── TASK.md             # Implementation task breakdown
 ├── types.ts            # TypeScript types and enums
-├── crypto.ts           # Cryptographic primitives
-├── messages.ts         # Message encoding/decoding
-├── registry.ts         # Registry address operations
+├── crypto.ts           # Cryptographic primitives (ECDH, HKDF, AES-GCM, HASH160)
+├── messages.ts         # Binary message encoder/decoder (all 16 types)
+├── registry.ts         # Registry address generation + well-known addresses
 ├── index.ts            # Public exports
-└── __tests__/          # Unit tests (TODO)
+├── htlc/
+│   ├── types.ts        # HTLC state machine types
+│   ├── script.ts       # Bitcoin Script builder (OP_IF/CLTV)
+│   ├── transactions.ts # Claim/refund transaction builders
+│   ├── manager.ts      # HTLC lifecycle manager
+│   └── index.ts        # HTLC exports
+└── channels/
+    ├── types.ts        # Channel state, config, commitment types
+    ├── multisig.ts     # 2-of-2 multisig (redeem script, scriptSig, parsing)
+    ├── commitment.ts   # Time-decaying commitments, cooperative close
+    ├── manager.ts      # Consumer + Provider channel managers
+    └── index.ts        # Channel exports
+
+tests/
+└── qp-channels.test.ts  # 44 tests across 6 suites
 ```
 
 ## Protocol Specification
