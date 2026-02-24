@@ -314,9 +314,12 @@ export function buildRefundTransaction(params: HTLCRefundParams): typeof Transac
 
 /**
  * Serialize a transaction to hex for broadcasting
+ * 
+ * Uses uncheckedSerialize to bypass bitcore fee validation — HTLC txs
+ * have non-standard fee/size ratios due to script complexity.
  */
 export function serializeTransaction(tx: typeof Transaction): string {
-  return tx.serialize();
+  return tx.uncheckedSerialize();
 }
 
 /**

@@ -3,6 +3,7 @@
  * Bitcoin Script for Hash Time-Locked Contracts
  */
 
+import { randomBytes } from 'crypto';
 import { hash160 } from '../crypto.js';
 import { encodeP2SHAddress } from '../registry.js';
 import type { HTLCParams, HTLCDetails } from './types.js';
@@ -304,7 +305,6 @@ export function verifySecret(secret: Buffer, expectedHash: Buffer): boolean {
  * Generate a random secret
  */
 export function generateSecret(): Buffer {
-  const { randomBytes } = require('crypto');
   return randomBytes(HTLC_DEFAULTS.SECRET_SIZE);
 }
 
