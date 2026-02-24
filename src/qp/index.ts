@@ -17,3 +17,6 @@ export * from './registry.js';
 
 // HTLC (Hash Time-Locked Contracts)
 export * from './htlc/index.js';
+
+// Payment Channels (2-of-2 Multisig)
+export * from './channels/index.js';

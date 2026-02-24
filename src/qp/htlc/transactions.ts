@@ -16,7 +16,8 @@ import type {
   UTXO 
 } from './types.js';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
 const bitcore = require('bitcore-lib-doge');
 const { Transaction, Script, PrivateKey } = bitcore;
 

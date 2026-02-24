@@ -5,7 +5,8 @@
 
 import { createHash, createHmac, createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
 const bitcore = require('bitcore-lib-doge');
 const { Point, BN } = bitcore.crypto;
 
