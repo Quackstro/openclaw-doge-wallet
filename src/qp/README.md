@@ -243,16 +243,21 @@ Services are identified by uint16 skill codes:
 - [x] Chain status (block height + fee estimates via DogeApiProvider)
 - [x] 26 tests with MockProvider (no network dependency)
 
-### Phase 5: Sideload P2P (Planned)
-- [ ] HTTPS callback server
-- [ ] Encrypted message envelope
-- [ ] Session management
-- [ ] IPFS fallback for large payloads
+### Phase 5: Sideload P2P ✅
+- [x] Counter-based IV derivation (prevents AES-GCM IV collision)
+- [x] AES-256-GCM encrypted message envelope with replay protection
+- [x] SessionManager: request/response tracking, timeout, bidirectional exchange
+- [x] Chunked transfer: large payload splitting, SHA-256 integrity, reassembly
+- [x] Wire format: iv || ciphertext || tag serialization
+- [x] 27 tests across 7 suites
 
-### Phase 6: Reputation System (Planned)
-- [ ] On-chain rating aggregation
-- [ ] Trust score computation
-- [ ] Sybil resistance metrics
+### Phase 6: Reputation System ✅
+- [x] Trust score computation (§10.4 weighted composite: rating/volume/diversity/success/age/dispute)
+- [x] Tier system (§10.5): new🥚 → emerging🐣 → established🐥 → trusted🦆 → elite🦅
+- [x] Hard requirements enforcement (min ratings, clients, avg rating per tier)
+- [x] Payment-weighted ratings (larger payments = more influence)
+- [x] Sybil resistance: min payment threshold, self-payment suspicion heuristic
+- [x] 28 tests across 7 suites
 
 ## File Structure
 
@@ -278,17 +283,28 @@ src/qp/
 │   ├── commitment.ts   # Time-decaying commitments, cooperative close
 │   ├── manager.ts      # Consumer + Provider channel managers
 │   └── index.ts        # Channel exports
-└── chain/
-    ├── types.ts        # On-chain message, scan filter, service listing types
-    ├── scanner.ts      # OP_RETURN extraction + QP message decoding
-    ├── registry-watcher.ts  # ServiceDirectory + RegistryWatcher
-    ├── tx-builder.ts   # SERVICE_ADVERTISE + RATING transaction builders
-    └── index.ts        # Chain exports
+├── chain/
+│   ├── types.ts        # On-chain message, scan filter, service listing types
+│   ├── scanner.ts      # OP_RETURN extraction + QP message decoding
+│   ├── registry-watcher.ts  # ServiceDirectory + RegistryWatcher
+│   ├── tx-builder.ts   # SERVICE_ADVERTISE + RATING transaction builders
+│   └── index.ts        # Chain exports
+├── sideload/
+│   ├── types.ts        # Session, envelope, connection types
+│   ├── envelope.ts     # AES-256-GCM encryption, IV derivation, wire format
+│   ├── session-manager.ts  # SessionManager, chunked transfer, reassembly
+│   └── index.ts        # Sideload exports
+└── reputation/
+    ├── types.ts        # Metrics, score, tier, weight types
+    ├── score.ts        # Trust score algorithm, tier determination, sybil detection
+    └── index.ts        # Reputation exports
 
 tests/
-├── qp-channels.test.ts  # 44 tests — payment channels
-├── qp-htlc.test.ts      # 42 tests — HTLC scripts/transactions/manager
-└── qp-chain.test.ts     # 26 tests — scanner/watcher/tx-builder
+├── qp-channels.test.ts    # 44 tests — payment channels
+├── qp-htlc.test.ts        # 42 tests — HTLC scripts/transactions/manager
+├── qp-chain.test.ts       # 26 tests — scanner/watcher/tx-builder
+├── qp-sideload.test.ts    # 27 tests — encryption/sessions/chunked transfer
+└── qp-reputation.test.ts  # 28 tests — trust scores/tiers/sybil detection
 ```
 
 ## Protocol Specification
