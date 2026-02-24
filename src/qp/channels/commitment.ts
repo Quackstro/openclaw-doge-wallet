@@ -4,9 +4,6 @@
  */
 
 import { hash160 } from '../crypto.js';
-import { encodeMessage, QPMessageType, QP_MAGIC, QP_VERSION } from '../index.js';
-import type { ChannelOpenPayload, ChannelClosePayload } from '../types.js';
-import { ChannelCloseType } from '../types.js';
 import { buildMultisigScriptSig, getSignatureOrder } from './multisig.js';
 import type { 
   ChannelParams, 
@@ -54,57 +51,6 @@ export function maxChannelCalls(params: ChannelParams): number {
     throw new Error('timelockGap must be positive');
   }
   return Math.floor(params.ttlBlocks / params.timelockGap);
-}
-
-/**
- * Create the OP_RETURN data for CHANNEL_OPEN message
- */
-export function createChannelOpenOpReturn(params: ChannelParams, depositKoinu: number): Buffer {
-  const payload: ChannelOpenPayload = {
-    channelId: params.channelId,
-    consumerPubkey: params.consumerPubkey,
-    providerPubkey: params.providerPubkey,
-    ttlBlocks: params.ttlBlocks,
-    depositKoinu,
-  };
-
-  return encodeMessage({
-    magic: QP_MAGIC,
-    version: QP_VERSION,
-    type: QPMessageType.CHANNEL_OPEN,
-    payload,
-  });
-}
-
-/**
- * Create the OP_RETURN data for CHANNEL_CLOSE message
- */
-export function createChannelCloseOpReturn(
-  params: ChannelParams,
-  funding: ChannelFunding,
-  state: CommitmentState,
-  closeType: ChannelCloseType
-): Buffer {
-  // Convert txid to buffer (reverse byte order)
-  const fundingTxidBuf = Buffer.from(funding.fundingTxId, 'hex').reverse();
-
-  const payload: ChannelClosePayload = {
-    channelId: params.channelId,
-    fundingTxid: fundingTxidBuf.subarray(0, 32),
-    consumerFinal: state.consumerBalance,
-    providerFinal: state.providerBalance,
-    callCount: state.callCount,
-    closeType,
-    timestamp: Math.floor(Date.now() / 1000),
-    reserved: Buffer.alloc(23),
-  };
-
-  return encodeMessage({
-    magic: QP_MAGIC,
-    version: QP_VERSION,
-    type: QPMessageType.CHANNEL_CLOSE,
-    payload,
-  });
 }
 
 /**

@@ -20,8 +20,6 @@ export {
 export {
   calculateTimelock,
   maxChannelCalls,
-  createChannelOpenOpReturn,
-  createChannelCloseOpReturn,
   buildCommitmentTx,
   signCommitment,
   verifyCommitmentSig,

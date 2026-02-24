@@ -110,8 +110,6 @@ export interface ChannelConfig {
   defaultTimelockGap: number;
   /** Maximum concurrent channels */
   maxConcurrentChannels: number;
-  /** Cooperative close timeout in blocks */
-  cooperativeCloseTimeout: number;
 }
 
 /** Dust threshold — outputs below this are unspendable (1 DOGE) */
@@ -132,27 +130,5 @@ export const CHANNEL_DEFAULTS: ChannelConfig = {
   defaultTimelockGap: 10,
   /** Maximum 10 concurrent channels */
   maxConcurrentChannels: 10,
-  /** 30 blocks for cooperative close */
-  cooperativeCloseTimeout: 30,
 } as const;
 
-export interface ChannelUpdate {
-  /** Amount to transfer from consumer to provider (koinu) */
-  paymentKoinu: number;
-  /** Tool call metadata (optional) */
-  metadata?: {
-    skillCode: number;
-    sessionId: number;
-  };
-}
-
-export interface CloseRequest {
-  /** Final consumer balance */
-  consumerFinal: number;
-  /** Final provider balance */
-  providerFinal: number;
-  /** Signature of requesting party */
-  signature: Buffer;
-  /** Timestamp of request */
-  timestamp: number;
-}
