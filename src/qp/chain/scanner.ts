@@ -9,54 +9,64 @@ import type { DogeApiProvider, Transaction as ChainTx } from '../../types.js';
 import type { OnChainQPMessage, ScanFilter } from './types.js';
 
 /**
- * Extract OP_RETURN data from a transaction's outputs.
+ * Extract all OP_RETURN data from a transaction's outputs.
+ * Returns array of data buffers (one per OP_RETURN output).
+ */
+export function extractAllOpReturns(tx: ChainTx): Buffer[] {
+  const results: Buffer[] = [];
+  for (const out of tx.outputs) {
+    const data = parseOpReturnOutput(out);
+    if (data) results.push(data);
+  }
+  return results;
+}
+
+/**
+ * Parse a single output for OP_RETURN data.
+ */
+function parseOpReturnOutput(out: { script?: string; scriptType?: string; amount: number }): Buffer | null {
+  if (!out.script) return null;
+  const isNullData = out.scriptType === 'null-data';
+  const startsWithOpReturn = out.script.startsWith('6a');
+  if (!isNullData && !startsWithOpReturn) return null;
+
+  try {
+    const scriptBuf = Buffer.from(out.script, 'hex');
+    if (scriptBuf[0] !== 0x6a) return null;
+
+    let dataStart: number;
+    let dataLen: number;
+
+    if (scriptBuf[1] <= 0x4b) {
+      dataLen = scriptBuf[1];
+      dataStart = 2;
+    } else if (scriptBuf[1] === 0x4c) {
+      dataLen = scriptBuf[2];
+      dataStart = 3;
+    } else if (scriptBuf[1] === 0x4d) {
+      dataLen = scriptBuf.readUInt16LE(2);
+      dataStart = 4;
+    } else {
+      return null;
+    }
+
+    if (dataStart + dataLen > scriptBuf.length) return null;
+    return scriptBuf.subarray(dataStart, dataStart + dataLen);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract first OP_RETURN data from a transaction's outputs.
+ * For backwards compatibility — returns first match or null.
  *
  * BlockCypher returns the output script hex. OP_RETURN scripts start with 0x6a
  * followed by a push opcode + data.
  */
 export function extractOpReturn(tx: ChainTx): Buffer | null {
-  for (const out of tx.outputs) {
-    if (!out.script) continue;
-
-    // OP_RETURN scripts: scriptType may be "null-data" or script starts with 6a
-    const isNullData = out.scriptType === 'null-data';
-    const startsWithOpReturn = out.script.startsWith('6a');
-
-    if (!isNullData && !startsWithOpReturn) continue;
-
-    try {
-      const scriptBuf = Buffer.from(out.script, 'hex');
-
-      // Script format: OP_RETURN (0x6a) + push opcode + data
-      if (scriptBuf[0] !== 0x6a) continue;
-
-      let dataStart: number;
-      let dataLen: number;
-
-      if (scriptBuf[1] <= 0x4b) {
-        // Direct push: next byte is length
-        dataLen = scriptBuf[1];
-        dataStart = 2;
-      } else if (scriptBuf[1] === 0x4c) {
-        // OP_PUSHDATA1
-        dataLen = scriptBuf[2];
-        dataStart = 3;
-      } else if (scriptBuf[1] === 0x4d) {
-        // OP_PUSHDATA2
-        dataLen = scriptBuf.readUInt16LE(2);
-        dataStart = 4;
-      } else {
-        continue;
-      }
-
-      if (dataStart + dataLen > scriptBuf.length) continue;
-
-      return scriptBuf.subarray(dataStart, dataStart + dataLen);
-    } catch {
-      continue;
-    }
-  }
-  return null;
+  const all = extractAllOpReturns(tx);
+  return all.length > 0 ? all[0] : null;
 }
 
 /**

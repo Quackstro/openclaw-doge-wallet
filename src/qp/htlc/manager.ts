@@ -10,6 +10,7 @@ import {
   buildFundingTransaction,
   buildClaimTransaction,
   buildRefundTransaction,
+  createHtlcClaimOpReturn,
   serializeTransaction,
   getTransactionId,
 } from './transactions.js';
@@ -151,6 +152,8 @@ export class HTLCProviderManager {
   async claim(id: string, feeKoinu: number = HTLC_DEFAULTS.FEE_BUFFER_KOINU): Promise<{
     claimTx: string;
     claimTxId: string;
+    /** OP_RETURN data for HTLC_CLAIM on-chain announcement (80 bytes) */
+    claimOpReturn: Buffer;
     secret: Buffer;
   }> {
     const record = await this.storage.load(id);
@@ -182,6 +185,13 @@ export class HTLCProviderManager {
     const claimTxHex = serializeTransaction(claimTx);
     const claimTxId = getTransactionId(claimTx);
 
+    // Generate OP_RETURN metadata for on-chain claim announcement
+    const claimOpReturn = createHtlcClaimOpReturn({
+      sessionId: record.sessionId,
+      fundingTxId: record.fundingTxId,
+      claimedKoinu: record.amountKoinu - feeKoinu,
+    });
+
     // Update record
     record.state = HTLCState.CLAIMED;
     record.claimTxId = claimTxId;
@@ -191,6 +201,7 @@ export class HTLCProviderManager {
     return {
       claimTx: claimTxHex,
       claimTxId,
+      claimOpReturn,
       secret: record.secret,
     };
   }

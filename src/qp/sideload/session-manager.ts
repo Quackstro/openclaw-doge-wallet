@@ -22,6 +22,9 @@ import type {
   EncryptedEnvelope,
 } from './types.js';
 
+/** Default session TTL: 24 hours */
+const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
 /** Pending request waiting for response */
 interface PendingRequest {
   messageId: string;
@@ -37,14 +40,30 @@ export class SessionManager {
   private session: SideloadSession;
   private pending: Map<string, PendingRequest> = new Map();
   private onMessage?: (msg: SideloadMessage) => void;
+  private ttlMs: number;
 
   constructor(params: {
     sessionId: number;
     sessionKey: Buffer;
     role: 'initiator' | 'responder';
     remoteInfo: SideloadConnectionInfo;
+    /** Session TTL in ms (default 24 hours) */
+    ttlMs?: number;
   }) {
     this.session = createSession(params);
+    this.ttlMs = params.ttlMs ?? DEFAULT_SESSION_TTL_MS;
+  }
+
+  /** Check if this session has expired */
+  isExpired(): boolean {
+    return Date.now() - this.session.createdAt > this.ttlMs;
+  }
+
+  /** Throw if session is expired */
+  private assertNotExpired(): void {
+    if (this.isExpired()) {
+      throw new Error(`Session ${this.session.sessionId} expired after ${this.ttlMs}ms`);
+    }
   }
 
   /** Get session info */
@@ -65,6 +84,7 @@ export class SessionManager {
     body: Buffer | Record<string, unknown>,
     meta?: SideloadMeta
   ): { wire: Buffer; messageId: string } {
+    this.assertNotExpired();
     const msg = createMessage({ type: 'request', body, meta });
     const { envelope, nextCounter } = encryptMessage(this.session, msg);
     this.session.sendCounter = nextCounter;
@@ -98,14 +118,24 @@ export class SessionManager {
     return envelopeToWire(envelope);
   }
 
+  /** Maximum payload size for in-memory chunking (100 MB) */
+  static readonly MAX_CHUNK_PAYLOAD_SIZE = 100 * 1024 * 1024;
+
   /**
    * Build encrypted chunk messages for large data transfer.
+   * For payloads > MAX_CHUNK_PAYLOAD_SIZE, use buildChunkIterator instead.
    */
   buildChunks(
     data: Buffer,
     chunkSize: number = 1_048_576, // 1 MB
     meta?: Partial<SideloadMeta>
   ): Buffer[] {
+    if (data.length > SessionManager.MAX_CHUNK_PAYLOAD_SIZE) {
+      throw new Error(
+        `Payload too large for in-memory chunking: ${data.length} bytes ` +
+        `(max ${SessionManager.MAX_CHUNK_PAYLOAD_SIZE}). Use buildChunkIterator instead.`
+      );
+    }
     const totalChunks = Math.ceil(data.length / chunkSize);
     const wires: Buffer[] = [];
 
@@ -141,10 +171,51 @@ export class SessionManager {
   }
 
   /**
+   * Build encrypted chunks as an async generator (streaming, low memory).
+   * Yields one wire buffer at a time — suitable for large payloads.
+   */
+  *buildChunkIterator(
+    data: Buffer,
+    chunkSize: number = 1_048_576,
+    meta?: Partial<SideloadMeta>
+  ): Generator<Buffer, void, undefined> {
+    const totalChunks = Math.ceil(data.length / chunkSize);
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = data.subarray(i * chunkSize, (i + 1) * chunkSize);
+      const msg = createMessage({
+        type: 'chunk',
+        body: chunk,
+        seq: i,
+        meta: i === 0 ? {
+          totalChunks,
+          totalSize: data.length,
+          ...meta,
+        } : undefined,
+      });
+      const { envelope, nextCounter } = encryptMessage(this.session, msg);
+      this.session.sendCounter = nextCounter;
+      yield envelopeToWire(envelope);
+    }
+
+    // Final "done" message
+    const sha256 = createHash('sha256').update(data).digest('hex');
+    const doneMsg = createMessage({
+      type: 'done',
+      body: {},
+      meta: { sha256, totalSize: data.length, totalChunks },
+    });
+    const { envelope, nextCounter } = encryptMessage(this.session, doneMsg);
+    this.session.sendCounter = nextCounter;
+    yield envelopeToWire(envelope);
+  }
+
+  /**
    * Process incoming encrypted wire data.
    * Decrypts, updates counters, and dispatches.
    */
   processIncoming(wire: Buffer): SideloadMessage {
+    this.assertNotExpired();
     const envelope = wireToEnvelope(wire);
     const { message, nextCounter } = decryptMessage(this.session, envelope);
     this.session.recvCounter = nextCounter;

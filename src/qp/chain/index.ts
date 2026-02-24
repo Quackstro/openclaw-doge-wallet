@@ -9,6 +9,7 @@ export * from './types.js';
 // OP_RETURN scanner
 export {
   extractOpReturn,
+  extractAllOpReturns,
   decodeQPFromTx,
   scanAddress,
   scanTransaction,

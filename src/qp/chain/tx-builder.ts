@@ -3,6 +3,7 @@
  * High-level helpers for building QP-annotated Dogecoin transactions.
  */
 
+import { randomFillSync } from 'crypto';
 import { encodeMessage } from '../messages.js';
 import { QPMessageType, QP_MAGIC, QP_VERSION, PriceUnit } from '../types.js';
 import type {
@@ -65,7 +66,7 @@ export interface RatingParams {
 export function buildAdvertiseOpReturn(params: AdvertiseParams): Buffer {
   // Generate random nonce
   const nonce = Buffer.alloc(4);
-  require('crypto').randomFillSync(nonce);
+  randomFillSync(nonce);
 
   const payload: ServiceAdvertisePayload = {
     skillCode: params.skillCode,

@@ -401,9 +401,10 @@ describe("HTLCProviderManager", () => {
     });
     await pm.markFunded(record.id, "c".repeat(64), 600_000_000);
 
-    const { claimTx, claimTxId, secret } = await pm.claim(record.id);
+    const { claimTx, claimTxId, claimOpReturn, secret } = await pm.claim(record.id);
     assert.ok(claimTx.length > 0);
     assert.ok(claimTxId.length > 0);
+    assert.equal(claimOpReturn.length, 80); // QP message is always 80 bytes
     assert.equal(secret.length, 32);
 
     const final = await storage.load(record.id);
@@ -640,7 +641,8 @@ describe("Full HTLC Lifecycle", () => {
     await pm.markFunded(provRecord.id, fakeFundingTxId, amount);
 
     // 4. Provider claims
-    const { claimTxId, secret: revealedSecret } = await pm.claim(provRecord.id);
+    const { claimTxId, claimOpReturn, secret: revealedSecret } = await pm.claim(provRecord.id);
+    assert.equal(claimOpReturn.length, 80);
     assert.ok(claimTxId.length > 0);
 
     // 5. Consumer verifies the revealed secret

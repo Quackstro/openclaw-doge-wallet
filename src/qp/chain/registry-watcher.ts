@@ -135,6 +135,8 @@ export class RegistryWatcher {
   private directory: ServiceDirectory;
   private options: Required<WatcherOptions>;
   private minScanIntervalMs: number;
+  /** Track processed revocation txids to avoid re-processing */
+  private processedRevocations: Set<string> = new Set();
 
   constructor(
     private provider: DogeApiProvider,
@@ -245,6 +247,10 @@ export class RegistryWatcher {
       );
 
       for (const msg of messages) {
+        // Skip already-processed revocations
+        if (this.processedRevocations.has(msg.txid)) continue;
+        this.processedRevocations.add(msg.txid);
+
         // A REVOKE_SERVICE from an address removes all that provider's listings
         const providerListings = this.directory.findByProvider(msg.senderAddress);
         for (const listing of providerListings) {

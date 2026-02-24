@@ -4,6 +4,7 @@
  */
 
 import { randomBytes } from 'crypto';
+import { Mutex } from 'async-mutex';
 import { createMultisig } from './multisig.js';
 import {
   createInitialCommitment,
@@ -41,6 +42,8 @@ export interface ChannelStorage {
   loadByState(state: ChannelState): Promise<ChannelRecord[]>;
   loadAll(): Promise<ChannelRecord[]>;
   delete(id: string): Promise<void>;
+  /** Acquire a per-channel lock for exclusive state mutation */
+  withLock<T>(id: string, fn: () => Promise<T>): Promise<T>;
 }
 
 /**
@@ -48,6 +51,7 @@ export interface ChannelStorage {
  */
 export class InMemoryChannelStorage implements ChannelStorage {
   private records: Map<string, ChannelRecord> = new Map();
+  private locks: Map<string, Mutex> = new Map();
 
   async save(record: ChannelRecord): Promise<void> {
     this.records.set(record.id, record);
@@ -76,6 +80,14 @@ export class InMemoryChannelStorage implements ChannelStorage {
 
   async delete(id: string): Promise<void> {
     this.records.delete(id);
+    this.locks.delete(id);
+  }
+
+  async withLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    if (!this.locks.has(id)) {
+      this.locks.set(id, new Mutex());
+    }
+    return this.locks.get(id)!.runExclusive(fn);
   }
 }
 

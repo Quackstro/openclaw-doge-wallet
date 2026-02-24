@@ -53,11 +53,14 @@ export function computeTrustScore(
   caps: NormalizationCaps = DEFAULT_CAPS
 ): number {
   // Normalize each factor to 0-1 range
+  // Clamp totalEarnedKoinu to safe integer range to prevent precision loss
+  const safeEarned = Math.min(metrics.totalEarnedKoinu, Number.MAX_SAFE_INTEGER);
+
   const ratingNorm = metrics.totalRatings > 0
     ? Math.max(0, Math.min(1, (metrics.averageRating - 1) / 4))
     : 0;
 
-  const volumeNorm = Math.min(metrics.totalEarnedKoinu / caps.maxVolumeKoinu, 1);
+  const volumeNorm = Math.min(safeEarned / caps.maxVolumeKoinu, 1);
   const diversityNorm = Math.min(metrics.uniqueClients / caps.maxClients, 1);
 
   const successNorm = metrics.totalServices > 0
