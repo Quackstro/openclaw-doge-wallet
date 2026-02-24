@@ -236,11 +236,12 @@ Services are identified by uint16 skill codes:
 - [x] Production hardening: balance conservation, timelock guards, dust folding, input validation
 - [x] 44 unit tests across 6 suites
 
-### Phase 4: Chain Integration (Planned)
-- [ ] OP_RETURN scanner (BlockCypher/SoChain)
-- [ ] Registry watcher
-- [ ] Transaction builder integration
-- [ ] Mempool monitoring
+### Phase 4: Chain Integration ✅
+- [x] OP_RETURN scanner (extractOpReturn, decodeQPFromTx, scanAddress, scanTransaction)
+- [x] Registry watcher (ServiceDirectory, RegistryWatcher with scan/prune/revocation)
+- [x] Transaction builder (SERVICE_ADVERTISE + RATING tx builders with OP_RETURN)
+- [x] Chain status (block height + fee estimates via DogeApiProvider)
+- [x] 26 tests with MockProvider (no network dependency)
 
 ### Phase 5: Sideload P2P (Planned)
 - [ ] HTTPS callback server
@@ -271,15 +272,23 @@ src/qp/
 │   ├── transactions.ts # Claim/refund transaction builders
 │   ├── manager.ts      # HTLC lifecycle manager
 │   └── index.ts        # HTLC exports
-└── channels/
-    ├── types.ts        # Channel state, config, commitment types
-    ├── multisig.ts     # 2-of-2 multisig (redeem script, scriptSig, parsing)
-    ├── commitment.ts   # Time-decaying commitments, cooperative close
-    ├── manager.ts      # Consumer + Provider channel managers
-    └── index.ts        # Channel exports
+├── channels/
+│   ├── types.ts        # Channel state, config, commitment types
+│   ├── multisig.ts     # 2-of-2 multisig (redeem script, scriptSig, parsing)
+│   ├── commitment.ts   # Time-decaying commitments, cooperative close
+│   ├── manager.ts      # Consumer + Provider channel managers
+│   └── index.ts        # Channel exports
+└── chain/
+    ├── types.ts        # On-chain message, scan filter, service listing types
+    ├── scanner.ts      # OP_RETURN extraction + QP message decoding
+    ├── registry-watcher.ts  # ServiceDirectory + RegistryWatcher
+    ├── tx-builder.ts   # SERVICE_ADVERTISE + RATING transaction builders
+    └── index.ts        # Chain exports
 
 tests/
-└── qp-channels.test.ts  # 44 tests across 6 suites
+├── qp-channels.test.ts  # 44 tests — payment channels
+├── qp-htlc.test.ts      # 42 tests — HTLC scripts/transactions/manager
+└── qp-chain.test.ts     # 26 tests — scanner/watcher/tx-builder
 ```
 
 ## Protocol Specification
