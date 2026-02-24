@@ -20,3 +20,6 @@ export * from './htlc/index.js';
 
 // Payment Channels (2-of-2 Multisig)
 export * from './channels/index.js';
+
+// Chain Integration (scanner, watcher, tx builder)
+export * from './chain/index.js';
