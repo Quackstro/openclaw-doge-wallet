@@ -11,4 +11,5 @@ export * from './channels/index.js';
 export * from './chain/index.js';
 export { SideloadProtocol, type SideloadConnectionInfo, type SideloadMessage, type SideloadMessageType, type SideloadMeta, type EncryptedEnvelope, type SideloadSession, deriveIV, createMessage as createSideloadMessage, serializeMessage as serializeSideloadMessage, deserializeMessage as deserializeSideloadMessage, encryptMessage as encryptSideloadMessage, decryptMessage as decryptSideloadMessage, envelopeToWire, wireToEnvelope, createSession as createSideloadSession, SessionManager, reassembleChunks, } from './sideload/index.js';
 export * from './reputation/index.js';
+export { CallState, type ServiceRequest, type ServiceResult, type OrchestratorConfig, type ProviderConfig, type SkillRegistration, type OrchestratorEvent, type SideloadTransport, type PaymentMethod, QPClient, QPProvider, } from './orchestrator/index.js';
 //# sourceMappingURL=index.d.ts.map

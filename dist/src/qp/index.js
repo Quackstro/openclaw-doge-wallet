@@ -21,4 +21,6 @@ export * from './chain/index.js';
 export { SideloadProtocol, deriveIV, createMessage as createSideloadMessage, serializeMessage as serializeSideloadMessage, deserializeMessage as deserializeSideloadMessage, encryptMessage as encryptSideloadMessage, decryptMessage as decryptSideloadMessage, envelopeToWire, wireToEnvelope, createSession as createSideloadSession, SessionManager, reassembleChunks, } from './sideload/index.js';
 // Reputation System (trust scores, tiers)
 export * from './reputation/index.js';
+// Orchestrator (lifecycle coordination)
+export { CallState, QPClient, QPProvider, } from './orchestrator/index.js';
 //# sourceMappingURL=index.js.map

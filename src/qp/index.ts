@@ -49,3 +49,18 @@ export {
 
 // Reputation System (trust scores, tiers)
 export * from './reputation/index.js';
+
+// Orchestrator (lifecycle coordination)
+export {
+  CallState,
+  type ServiceRequest,
+  type ServiceResult,
+  type OrchestratorConfig,
+  type ProviderConfig,
+  type SkillRegistration,
+  type OrchestratorEvent,
+  type SideloadTransport,
+  type PaymentMethod,
+  QPClient,
+  QPProvider,
+} from './orchestrator/index.js';
