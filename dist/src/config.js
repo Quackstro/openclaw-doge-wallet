@@ -66,6 +66,14 @@ const DEFAULTS = {
         maxFeePerKb: 200000000,
         fallbackFeePerKb: 100000000,
     },
+    qp: {
+        providerEnabled: false,
+        skills: [],
+        advertiseTtlBlocks: 10080,
+        scanIntervalMs: 60000,
+        autoRate: true,
+        defaultRating: 5,
+    },
 };
 /**
  * Deep merge helper — merges source into target, preferring source values.

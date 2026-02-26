@@ -2910,6 +2910,61 @@ const dogeWalletPlugin = {
       return qpClient;
     }
 
+    async function ensureQPProvider(): Promise<InstanceType<typeof QPProviderClass>> {
+      if (qpProvider) return qpProvider;
+
+      const initialized = await walletManager.isInitialized();
+      if (!initialized || !walletManager.isUnlocked()) {
+        throw new Error('Wallet must be initialized and unlocked for QP provider mode');
+      }
+
+      await loadQPModules();
+      const address = await walletManager.getAddress();
+      const privkey = walletManager.getPrivateKey();
+      const { createRequire: cr } = await import('module');
+      const req = cr(import.meta.url);
+      const bc = req('bitcore-lib-doge');
+      const pubkey = Buffer.from(new bc.PrivateKey(privkey).publicKey.toBuffer());
+
+      // Convert config skills to SkillRegistration format
+      const defaultFlags = {
+        supportsDirectHtlc: true,
+        supportsSideloadHttps: true,
+        supportsSideloadLibp2p: false,
+        supportsSideloadIpfs: false,
+        onlineNow: true,
+        supportsPaymentChannel: false,
+        acceptsPostPayment: false,
+        isCompositeTool: false,
+      };
+
+      const skills = (cfg.qp?.skills ?? []).map((s: any) => ({
+        skillCode: s.skillCode,
+        priceKoinu: Math.round(s.priceDoge * 100_000_000),
+        priceUnit: s.priceUnit ?? 0,
+        description: s.description,
+        flags: defaultFlags,
+        handler: async (request: Record<string, unknown>) => {
+          // Default handler — returns stub. Real handlers registered via hooks (future).
+          return { status: 'ok', skill: s.skillCode, message: 'Skill handler not configured' } as Record<string, unknown>;
+        },
+      }));
+
+      qpProvider = new QPProviderClass({
+        address: address!,
+        pubkey: pubkey!,
+        privkey: privkey!,
+        provider: primaryProvider,
+        getUtxos: async () => utxoManager.getUtxos(),
+        changeAddress: address!,
+        skills,
+        advertiseTtlBlocks: cfg.qp?.advertiseTtlBlocks ?? 10_080,
+        scanIntervalMs: cfg.qp?.scanIntervalMs ?? 60_000,
+      });
+
+      return qpProvider;
+    }
+
     // ------------------------------------------------------------------
     // Command: /qp — Quackstro Protocol hub
     // ------------------------------------------------------------------
@@ -2925,10 +2980,15 @@ const dogeWalletPlugin = {
 
         if (!sub || sub === "help") {
           return `🦆 **Quackstro Protocol**\n\n` +
+            `**Consumer:**\n` +
             `\`/qp discover <skill>\` — Find providers for a skill\n` +
-            `\`/qp status\` — Show QP status\n` +
-            `\`/qp advertise\` — Advertise skills (provider mode)\n` +
             `\`/qp directory\` — List known providers\n\n` +
+            `**Provider:**\n` +
+            `\`/qp advertise\` — Broadcast skills on-chain\n` +
+            `\`/qp provider start\` — Start listening for requests\n` +
+            `\`/qp provider stop\` — Stop listening\n\n` +
+            `**General:**\n` +
+            `\`/qp status\` — Show QP status\n\n` +
             `_Agent-to-agent economy on Dogecoin_ 🐕`;
         }
 
@@ -2993,6 +3053,58 @@ const dogeWalletPlugin = {
           } catch (err: unknown) {
             return `Directory error: ${(err as Error).message}`;
           }
+        }
+
+        if (sub === "advertise") {
+          try {
+            const provider = await ensureQPProvider();
+            const skills = cfg.qp?.skills ?? [];
+            if (skills.length === 0) {
+              return "No skills configured. Add skills to your plugin config under `qp.skills`.";
+            }
+            const txIds = await provider.advertise();
+            const lines = txIds.map((txid, i) =>
+              `${i + 1}. 0x${skills[i].skillCode.toString(16).padStart(4, '0')} — ${skills[i].description} — \`${txid.slice(0, 12)}…\``
+            );
+            return `🦆 **Advertised ${txIds.length} skill(s)**\n\n` + lines.join('\n');
+          } catch (err: unknown) {
+            return `Advertise failed: ${(err as Error).message}`;
+          }
+        }
+
+        if (sub === "provider") {
+          const provSub = rest.split(/\s+/)[0]?.toLowerCase() ?? "";
+
+          if (provSub === "start") {
+            try {
+              const provider = await ensureQPProvider();
+              provider.start();
+              return "🦆 Provider mode **started**. Scanning for incoming handshakes.";
+            } catch (err: unknown) {
+              return `Provider start failed: ${(err as Error).message}`;
+            }
+          }
+
+          if (provSub === "stop") {
+            if (!qpProvider) return "Provider is not running.";
+            qpProvider.stop();
+            return "🦆 Provider mode **stopped**.";
+          }
+
+          if (provSub === "status" || !provSub) {
+            const running = qpProvider !== null;
+            const sessions = qpProvider?.sessionCount ?? 0;
+            const skills = cfg.qp?.skills ?? [];
+            const skillLines = skills.map(s =>
+              `  • 0x${s.skillCode.toString(16).padStart(4, '0')} — ${s.description} — ${s.priceDoge} DOGE`
+            );
+            return `🦆 **Provider Status**\n\n` +
+              `Running: ${running ? '🟢 Yes' : '⚪ No'}\n` +
+              `Sessions: ${sessions}\n` +
+              `Skills (${skills.length}):\n` + (skillLines.length ? skillLines.join('\n') : '  (none configured)');
+          }
+
+          return `Unknown provider command. Try \`/qp provider start\` or \`/qp provider stop\`.`;
         }
 
         return `Unknown subcommand: \`${sub}\`. Try \`/qp help\`.`;
@@ -3172,6 +3284,68 @@ const dogeWalletPlugin = {
         },
       },
       { name: "qp_status" },
+    );
+
+    // ------------------------------------------------------------------
+    // Tool: qp_advertise — Advertise skills on-chain
+    // ------------------------------------------------------------------
+    api.registerTool(
+      {
+        name: "qp_advertise",
+        label: "QP Advertise Skills",
+        description:
+          "Advertise this agent's skills on the Dogecoin blockchain. " +
+          "Broadcasts SERVICE_ADVERTISE transactions to QP registry addresses. " +
+          "Skills must be configured in the plugin config under qp.skills.",
+        parameters: Type.Object({}),
+        async execute() {
+          try {
+            const skills = cfg.qp?.skills ?? [];
+            if (skills.length === 0) {
+              return {
+                content: [{ type: "text", text: "No skills configured. Add skills to plugin config under qp.skills." }],
+                details: { error: "NO_SKILLS_CONFIGURED" },
+              };
+            }
+
+            const provider = await ensureQPProvider();
+            const txIds = await provider.advertise();
+
+            await auditLog.logAudit({
+              action: "qp_discovery",
+              reason: `Advertised ${txIds.length} skill(s) on-chain`,
+              initiatedBy: "agent",
+              metadata: { txIds, skills: skills.map(s => ({ skillCode: s.skillCode, description: s.description })) },
+            });
+
+            return {
+              content: [{
+                type: "text",
+                text: `Advertised ${txIds.length} skill(s) on-chain:\n` +
+                  txIds.map((txid, i) =>
+                    `${i + 1}. 0x${skills[i].skillCode.toString(16).padStart(4, '0')} (${skills[i].description}) — txid: ${txid}`
+                  ).join('\n'),
+              }],
+              details: {
+                count: txIds.length,
+                txIds,
+                skills: skills.map((s, i) => ({
+                  skillCode: s.skillCode,
+                  description: s.description,
+                  priceDoge: s.priceDoge,
+                  txId: txIds[i],
+                })),
+              },
+            };
+          } catch (err: unknown) {
+            return {
+              content: [{ type: "text", text: `Advertise error: ${(err as Error).message}` }],
+              details: { error: (err as Error).message },
+            };
+          }
+        },
+      },
+      { name: "qp_advertise" },
     );
 
     // ------------------------------------------------------------------

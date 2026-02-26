@@ -226,6 +226,34 @@ export interface FeesConfig {
   fallbackFeePerKb: number;
 }
 
+/** QP provider skill definition (from plugin config) */
+export interface QPSkillConfig {
+  /** Skill code (number or hex string parsed externally) */
+  skillCode: number;
+  /** Price per request in DOGE */
+  priceDoge: number;
+  /** Human-readable description (max 20 chars for OP_RETURN) */
+  description: string;
+  /** Price unit: 0=per-request 1=per-kb 2=per-hour 3=per-1k-tokens 4=flat 5=negotiable */
+  priceUnit?: number;
+}
+
+/** QP (Quackstro Protocol) configuration */
+export interface QPConfig {
+  /** Enable QP provider mode */
+  providerEnabled: boolean;
+  /** Skills to advertise when provider mode is active */
+  skills: QPSkillConfig[];
+  /** TTL for advertisements in blocks (default 10080 ~ 7 days) */
+  advertiseTtlBlocks: number;
+  /** Scan interval for incoming handshakes in ms (default 60000) */
+  scanIntervalMs: number;
+  /** Auto-rate providers after service (consumer mode, default true) */
+  autoRate: boolean;
+  /** Default rating 1-5 (default 5) */
+  defaultRating: number;
+}
+
 export interface DogeWalletConfig {
   network: "mainnet" | "testnet";
   dataDir: string;
@@ -236,6 +264,8 @@ export interface DogeWalletConfig {
   fees: FeesConfig;
   /** Chat IDs authorized to approve/deny sends. Empty = any caller allowed (legacy behavior). */
   ownerChatIds?: string[];
+  /** Quackstro Protocol configuration */
+  qp: QPConfig;
 }
 
 // ============================================================================
