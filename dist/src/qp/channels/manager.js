@@ -282,6 +282,10 @@ export class ChannelConsumerManager extends BaseChannelManager {
             if (!record || !record.funding) {
                 throw new Error(`Channel not found: ${id}`);
             }
+            // Validate sequence continuity
+            if (record.latestCommitment && state.sequence !== record.latestCommitment.sequence + 1) {
+                throw new Error(`Sequence mismatch: expected ${record.latestCommitment.sequence + 1}, got ${state.sequence}`);
+            }
             // Rebuild transaction
             const { tx } = createNextCommitment(record.params, record.funding, record.latestCommitment, state.providerBalance - (record.latestCommitment?.providerBalance || 0), this.address, providerAddress);
             // Verify provider's signature before accepting

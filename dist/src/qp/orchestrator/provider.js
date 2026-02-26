@@ -130,8 +130,8 @@ export class QPProvider extends EventEmitter {
             try {
                 await this.handleHandshakeInit(msg);
             }
-            catch {
-                // Skip invalid/undecodable handshakes
+            catch (err) {
+                this.emitEvent('handshake-error', 'error', CallState.FAILED, { phase: 'handshake', error: err });
             }
         }
     }
@@ -180,8 +180,8 @@ export class QPProvider extends EventEmitter {
         const ackIv = deriveIv(ackNonce, sessionId);
         const ourInfo = {
             sessionId,
-            port: 8443,
-            ipv4: Buffer.from([0, 0, 0, 0]),
+            port: this.config.sideloadPort ?? 8443,
+            ipv4: this.config.sideloadIpv4 ?? Buffer.from([0, 0, 0, 0]),
             protocol: SideloadProtocol.HTTPS,
             token: randomBytes(8),
         };
@@ -315,8 +315,8 @@ export class QPProvider extends EventEmitter {
                 const { txid } = await broadcastTx(this.config.provider, result.claimTx);
                 claimed.push(txid);
             }
-            catch {
-                // Skip — may not be claimable yet
+            catch (err) {
+                this.emitEvent('claim-error', 'error', CallState.FAILED, { phase: 'claim', htlcId: htlc.id, error: err });
             }
         }
         return claimed;

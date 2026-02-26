@@ -58,4 +58,26 @@ describe("parseDogeConfig", () => {
     const cfg = parseDogeConfig({});
     assert.equal(cfg.utxo.refreshIntervalSeconds, 180);
   });
+
+  it("QP defaults are applied", () => {
+    const cfg = parseDogeConfig({});
+    assert.ok(cfg.qp, "qp config should exist");
+    assert.equal(cfg.qp.providerEnabled, false);
+    assert.deepEqual(cfg.qp.skills, []);
+    assert.equal(cfg.qp.advertiseTtlBlocks, 10_080);
+    assert.equal(cfg.qp.scanIntervalMs, 60_000);
+    assert.equal(cfg.qp.autoRate, true);
+    assert.equal(cfg.qp.defaultRating, 5);
+  });
+
+  it("invalid qp.defaultRating throws", () => {
+    assert.throws(
+      () => parseDogeConfig({ qp: { defaultRating: 0 } }),
+      /qp.defaultRating must be 1-5/,
+    );
+    assert.throws(
+      () => parseDogeConfig({ qp: { defaultRating: 6 } }),
+      /qp.defaultRating must be 1-5/,
+    );
+  });
 });

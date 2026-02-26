@@ -150,11 +150,11 @@ export function paymentWeightedRating(ratings) {
  */
 export function selfPaymentSuspicion(params) {
     // If one sender accounts for a large ratio of payments, suspicious
-    const concentrationScore = params.senderUniquePayments > 0
-        ? 1 - (params.senderUniquePayments / params.totalPayments)
+    const concentrationScore = params.totalPayments > 0
+        ? Math.max(0, 1 - (params.senderUniquePayments / params.totalPayments))
         : 0;
     // If many payments come from the same address
-    const sameAddrScore = params.sameAddressRatio;
-    return Math.min(1, (concentrationScore + sameAddrScore) / 2);
+    const sameAddrScore = Math.max(0, Math.min(1, params.sameAddressRatio));
+    return Math.max(0, Math.min(1, (concentrationScore + sameAddrScore) / 2));
 }
 //# sourceMappingURL=score.js.map

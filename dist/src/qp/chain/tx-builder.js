@@ -134,6 +134,7 @@ export function buildRatingTx(params) {
 }
 /**
  * Sign a transaction with a private key.
+ * IMPORTANT: Caller is responsible for zeroing privateKeyBuf after use.
  */
 export function signTx(tx, privateKeyBuf) {
     const privKey = new PrivateKey(privateKeyBuf);

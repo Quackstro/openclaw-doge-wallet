@@ -20,8 +20,8 @@ export declare class ServiceDirectory {
     getActive(currentBlock: number): ServiceListing[];
     /** Search by skill code */
     findBySkill(skillCode: number, currentBlock: number): ServiceListing[];
-    /** Search by provider address */
-    findByProvider(address: string): ServiceListing[];
+    /** Search by provider address (optionally filter expired) */
+    findByProvider(address: string, currentBlock?: number): ServiceListing[];
     /** Prune expired listings */
     pruneExpired(currentBlock: number): number;
     /** Get total count */
@@ -39,8 +39,9 @@ export declare class RegistryWatcher {
     private directory;
     private options;
     private minScanIntervalMs;
-    /** Track processed revocation txids to avoid re-processing */
+    /** Track processed revocation txids to avoid re-processing (bounded) */
     private processedRevocations;
+    private static readonly MAX_PROCESSED_REVOCATIONS;
     constructor(provider: DogeApiProvider, directory?: ServiceDirectory, options?: WatcherOptions & {
         minScanIntervalMs?: number;
     });

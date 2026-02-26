@@ -63,9 +63,16 @@ export class ServiceDirectory {
     findBySkill(skillCode, currentBlock) {
         return this.getActive(currentBlock).filter(l => l.skillCode === skillCode);
     }
-    /** Search by provider address */
-    findByProvider(address) {
-        return Array.from(this.listings.values()).filter(l => l.providerAddress === address);
+    /** Search by provider address (optionally filter expired) */
+    findByProvider(address, currentBlock) {
+        const all = Array.from(this.listings.values()).filter(l => l.providerAddress === address);
+        if (currentBlock === undefined)
+            return all;
+        return all.filter(l => {
+            if (!l.expiresAtBlock)
+                return true;
+            return l.expiresAtBlock > currentBlock;
+        });
     }
     /** Prune expired listings */
     pruneExpired(currentBlock) {
@@ -108,8 +115,9 @@ export class RegistryWatcher {
     directory;
     options;
     minScanIntervalMs;
-    /** Track processed revocation txids to avoid re-processing */
+    /** Track processed revocation txids to avoid re-processing (bounded) */
     processedRevocations = new Set();
+    static MAX_PROCESSED_REVOCATIONS = 10_000;
     constructor(provider, directory, options) {
         this.provider = provider;
         this.directory = directory ?? new ServiceDirectory();

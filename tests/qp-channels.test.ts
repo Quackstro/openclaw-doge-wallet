@@ -690,16 +690,16 @@ describe("Hardening", () => {
   it("buildCooperativeCloseTx folds dust outputs into fee", () => {
     const ms = createMultisig(consumer.pub, provider.pub);
     const funding = makeFunding(ms.redeemScript, ms.p2shAddress);
-    // Consumer has only 50K koinu after fee — below dust threshold
+    // Consumer has 500K koinu — below dust threshold (1M = 0.01 DOGE) after proportional fee split
     const state: CommitmentState = {
       sequence: 0,
-      consumerBalance: 1_050_000, // 1M fee leaves 50K < DUST_THRESHOLD
-      providerBalance: funding.depositKoinu - 1_050_000,
+      consumerBalance: 500_000,
+      providerBalance: funding.depositKoinu - 500_000,
       callCount: 0,
       timelockBlock: 104320,
     };
     const tx = buildCooperativeCloseTx(makeParams(), funding, state, consumer.addr, provider.addr);
-    // Should have only 1 output (provider), consumer dust folded into fee
+    // Consumer's balance is below dust threshold — folded into fee, only provider output remains
     assert.equal(tx.outputs.length, 1);
   });
 
@@ -908,7 +908,7 @@ describe("Concurrent Access", () => {
     assert.equal(rejected.length, 1);
   });
 
-  it("withLock serialises concurrent payments", async () => {
+  it("concurrent createPayment returns same sequence (read-only until acceptPaymentSignature)", async () => {
     const consumerStorage = new InMemoryChannelStorage();
     const providerStorage = new InMemoryChannelStorage();
     const cm = new ChannelConsumerManager(consumerStorage, consumer.pub, consumer.privBuf, consumer.addr);
@@ -936,7 +936,7 @@ describe("Concurrent Access", () => {
     const { providerSig } = await pm.signRefundCommitment(provRecord.id, refundSig, consumer.addr);
     await cm.completeRefundAndOpen(record.id, providerSig);
 
-    // Two concurrent payments — mutex serialises them so both get unique sequence numbers
+    // Two concurrent createPayment calls — both read-only, return same base state
     const results = await Promise.allSettled([
       cm.createPayment(record.id, 10_000_000, provider.addr),
       cm.createPayment(record.id, 10_000_000, provider.addr),

@@ -546,13 +546,14 @@ export class QPClient extends EventEmitter {
     const responsePromise = sessionManager.expectResponse(messageId, timeoutMs);
 
     // Receive wire bytes from transport and feed to session manager
+    let cancelled = false;
     const receiveLoop = async () => {
       const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
+      while (!cancelled && Date.now() < deadline) {
         try {
           const remaining = deadline - Date.now();
           const wire = await transport.receive(session.sessionId, Math.min(remaining, 10_000));
-          sessionManager.processIncoming(wire);
+          if (!cancelled) sessionManager.processIncoming(wire);
         } catch {
           // Timeout on single receive — continue loop
         }
@@ -565,7 +566,7 @@ export class QPClient extends EventEmitter {
       const response = await responsePromise;
       return response;
     } finally {
-      // Loop will end naturally when deadline passes
+      cancelled = true;
       await loopPromise.catch(() => {});
     }
   }

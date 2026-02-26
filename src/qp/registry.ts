@@ -3,7 +3,6 @@
  * Registry address generation and service advertisement
  */
 
-import { createHash } from 'crypto';
 import bs58check from 'bs58check';
 import { hash160, sha256 } from './crypto.js';
 import type { RegistryCategory } from './types.js';
@@ -31,11 +30,8 @@ export function generateRegistryAddress(category: string): string {
   const input = `QuackstroProtocol:Registry:v1:${category}`;
   const inputBuffer = Buffer.from(input, 'utf8');
   
-  // SHA256 of the input string
-  const sha256Hash = sha256(inputBuffer);
-  
-  // RIPEMD160 of the SHA256 hash
-  const ripemdHash = createHash('ripemd160').update(sha256Hash).digest();
+  // RIPEMD160(SHA256(input)) — same as hash160
+  const ripemdHash = hash160(inputBuffer);
   
   // Create P2PKH payload: version byte + 20-byte hash
   const payload = Buffer.alloc(21);
@@ -52,8 +48,9 @@ export function verifyRegistryAddresses(): boolean {
   for (const [category, expected] of Object.entries(REGISTRY_ADDRESSES)) {
     const generated = generateRegistryAddress(category);
     if (generated !== expected) {
-      console.error(`Registry address mismatch for ${category}: got ${generated}, expected ${expected}`);
-      return false;
+      throw new Error(
+        `Registry address mismatch for ${category}: got ${generated}, expected ${expected}`
+      );
     }
   }
   return true;
@@ -82,7 +79,12 @@ export function isRegistryAddress(address: string): RegistryCategory | null {
  * Decode a Dogecoin address to get the hash and version
  */
 export function decodeAddress(address: string): { version: number; hash: Buffer } {
-  const decoded = bs58check.decode(address);
+  let decoded: Uint8Array;
+  try {
+    decoded = bs58check.decode(address);
+  } catch (err) {
+    throw new Error(`Invalid Dogecoin address "${address}": ${(err as Error).message}`);
+  }
   return {
     version: decoded[0],
     hash: Buffer.from(decoded.subarray(1)),

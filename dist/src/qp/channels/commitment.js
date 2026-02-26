@@ -206,9 +206,22 @@ export function buildCooperativeCloseTx(params, funding, state, consumerAddress,
             Buffer.from([0x87]),
         ]))),
     });
-    // Fee from consumer's balance (or split proportionally)
-    const consumerPays = Math.min(state.consumerBalance, feeKoinu);
-    const providerPays = feeKoinu - consumerPays;
+    // Proportional fee split based on balances
+    const totalBalance = state.consumerBalance + state.providerBalance;
+    let consumerPays;
+    let providerPays;
+    if (totalBalance === 0) {
+        consumerPays = 0;
+        providerPays = 0;
+    }
+    else {
+        consumerPays = Math.min(Math.floor(feeKoinu * state.consumerBalance / totalBalance), state.consumerBalance);
+        providerPays = Math.min(feeKoinu - consumerPays, state.providerBalance);
+        // If provider can't cover remainder, consumer absorbs it
+        if (consumerPays + providerPays < feeKoinu) {
+            consumerPays = Math.min(feeKoinu - providerPays, state.consumerBalance);
+        }
+    }
     // Output 0: Consumer's balance minus fee share
     const consumerOutput = state.consumerBalance - consumerPays;
     if (consumerOutput > 0) {

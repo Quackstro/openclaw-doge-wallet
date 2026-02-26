@@ -36,6 +36,8 @@ export declare class HTLCProviderManager {
     private providerPrivkey;
     private providerAddress;
     constructor(storage: HTLCStorage, providerPubkey: Buffer, providerPrivkey: Buffer, providerAddress: string);
+    /** Zero sensitive key material */
+    destroy(): void;
     /**
      * Create a new HTLC offer (provider generates secret)
      */
@@ -81,6 +83,8 @@ export declare class HTLCConsumerManager {
     private consumerPrivkey;
     private consumerAddress;
     constructor(storage: HTLCStorage, consumerPubkey: Buffer, consumerPrivkey: Buffer, consumerAddress: string);
+    /** Zero sensitive key material */
+    destroy(): void;
     /**
      * Accept an HTLC offer from provider
      */

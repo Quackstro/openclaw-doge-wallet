@@ -82,11 +82,16 @@ export class ServiceDirectory {
     return this.getActive(currentBlock).filter(l => l.skillCode === skillCode);
   }
 
-  /** Search by provider address */
-  findByProvider(address: string): ServiceListing[] {
-    return Array.from(this.listings.values()).filter(
+  /** Search by provider address (optionally filter expired) */
+  findByProvider(address: string, currentBlock?: number): ServiceListing[] {
+    const all = Array.from(this.listings.values()).filter(
       l => l.providerAddress === address
     );
+    if (currentBlock === undefined) return all;
+    return all.filter(l => {
+      if (!l.expiresAtBlock) return true;
+      return l.expiresAtBlock > currentBlock;
+    });
   }
 
   /** Prune expired listings */
@@ -135,8 +140,9 @@ export class RegistryWatcher {
   private directory: ServiceDirectory;
   private options: Required<WatcherOptions>;
   private minScanIntervalMs: number;
-  /** Track processed revocation txids to avoid re-processing */
+  /** Track processed revocation txids to avoid re-processing (bounded) */
   private processedRevocations: Set<string> = new Set();
+  private static readonly MAX_PROCESSED_REVOCATIONS = 10_000;
 
   constructor(
     private provider: DogeApiProvider,

@@ -265,7 +265,7 @@ export interface DogeWalletConfig {
   /** Chat IDs authorized to approve/deny sends. Empty = any caller allowed (legacy behavior). */
   ownerChatIds?: string[];
   /** Quackstro Protocol configuration */
-  qp: QPConfig;
+  qp?: QPConfig;
 }
 
 // ============================================================================

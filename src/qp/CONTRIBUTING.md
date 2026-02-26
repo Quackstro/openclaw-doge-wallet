@@ -46,7 +46,7 @@ What's done:
 - ECDH, HKDF, AES-256-GCM primitives
 - Registry address generation
 
-### Phase 2: HTLC Scripts 🔲 OPEN FOR CONTRIBUTION
+### Phase 2: HTLC Scripts ✅ COMPLETE
 
 **Goal:** Build HTLC redeem scripts for atomic tool-call settlement
 
@@ -88,7 +88,7 @@ export function createClaimTx(params: {
 }): Transaction;
 ```
 
-### Phase 3: Payment Channels 🔲 OPEN FOR CONTRIBUTION
+### Phase 3: Payment Channels ✅ COMPLETE
 
 **Goal:** 2-of-2 multisig payment channels with time-decaying commitments
 
@@ -103,7 +103,7 @@ export function createClaimTx(params: {
 - No penalty transactions (simpler than Lightning)
 - Commitment sequence: higher seq = earlier unlock
 
-### Phase 4: Chain Scanner 🔲 OPEN FOR CONTRIBUTION
+### Phase 4: Chain Scanner ✅ COMPLETE
 
 **Goal:** Monitor DOGE blockchain for QP messages
 
@@ -117,7 +117,7 @@ export function createClaimTx(params: {
 - BlockCypher: `https://api.blockcypher.com/v1/doge/main`
 - SoChain: `https://sochain.com/api/v3`
 
-### Phase 5: Sideload P2P 🔲 OPEN FOR CONTRIBUTION
+### Phase 5: Sideload P2P ✅ COMPLETE
 
 **Goal:** Encrypted off-chain communication
 
@@ -145,7 +145,7 @@ interface SideloadMessage {
 }
 ```
 
-### Phase 6: Reputation System 🔲 OPEN FOR CONTRIBUTION
+### Phase 6: Reputation System ✅ COMPLETE
 
 **Goal:** Compute trust scores from on-chain data
 
@@ -236,7 +236,6 @@ describe('encodeMessage', () => {
    ```bash
    pnpm build      # Must pass
    pnpm test       # Must pass
-   pnpm lint       # Should pass
    ```
 6. **Submit PR** with clear description of changes
 

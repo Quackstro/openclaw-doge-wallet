@@ -219,12 +219,11 @@ Time-decaying 2-of-2 multisig for instant off-chain payments:
 ```typescript
 trustScore = (
   0.30 * ratingNorm +      // Average rating
-  0.20 * volumeNorm +      // Total earned
+  0.25 * volumeNorm +      // Total earned
   0.20 * diversityNorm +   // Unique clients
   0.15 * successNorm +     // Delivery rate
-  0.10 * ageNorm -         // Account age
-  0.05 * disputePenalty    // Dispute count
-) * 1000
+  0.10 * ageNorm           // Account age
+) * 1000 - 50 * disputePenalty  // Penalty: up to 50 points per dispute
 ```
 
 ### 9.3 Reputation Tiers

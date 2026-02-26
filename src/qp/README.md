@@ -336,13 +336,13 @@ Key sections:
 
 ### Testing
 ```bash
-pnpm test           # Run all tests
-pnpm test:qp        # Run QP-specific tests (TODO)
+pnpm test                                    # Run all tests
+node --test tests/qp-*.test.ts               # Run QP-specific tests
 ```
 
 ## References
 
-- [Quackstro Protocol Spec v0.1.1](../../../clawd/plans/quackstro-protocol-spec.md)
+- [Quackstro Protocol Spec v0.1.1](./SPEC.md)
 - [Dogecoin OP_RETURN](https://github.com/dogecoin/dogecoin/blob/master/doc/op_return.md)
 - [BIP65 CHECKLOCKTIMEVERIFY](https://github.com/bitcoin/bips/blob/master/bip-0065.mediawiki)
 - [secp256k1 ECDH](https://en.bitcoin.it/wiki/Secp256k1)

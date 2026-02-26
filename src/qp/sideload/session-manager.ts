@@ -281,17 +281,17 @@ export function reassembleChunks(
   chunks: Array<{ seq: number; body: Buffer }>,
   expectedHash?: string
 ): Buffer {
-  // Sort by sequence number
-  chunks.sort((a, b) => a.seq - b.seq);
+  // Sort by sequence number (non-mutating)
+  const sorted = [...chunks].sort((a, b) => a.seq - b.seq);
 
   // Verify continuity
-  for (let i = 0; i < chunks.length; i++) {
-    if (chunks[i].seq !== i) {
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].seq !== i) {
       throw new Error(`Missing chunk at sequence ${i}`);
     }
   }
 
-  const assembled = Buffer.concat(chunks.map(c => c.body));
+  const assembled = Buffer.concat(sorted.map(c => c.body));
 
   // Verify hash if provided
   if (expectedHash) {

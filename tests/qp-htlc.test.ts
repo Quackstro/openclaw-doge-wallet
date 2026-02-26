@@ -64,8 +64,8 @@ function makeKeyPair() {
   return { priv, pub, addr, privBuf };
 }
 
-const consumer = makeKeyPair();
-const provider = makeKeyPair();
+const consumer = Object.freeze(makeKeyPair());
+const provider = Object.freeze(makeKeyPair());
 
 function makeSecret(): { secret: Buffer; secretHash: Buffer } {
   const secret = randomBytes(32);

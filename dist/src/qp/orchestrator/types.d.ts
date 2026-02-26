@@ -103,6 +103,10 @@ export interface ProviderConfig extends OrchestratorConfig {
     advertiseTtlBlocks?: number;
     /** Scan interval for incoming handshakes (ms, default 60000) */
     scanIntervalMs?: number;
+    /** Sideload P2P listen port (default 8443) */
+    sideloadPort?: number;
+    /** Sideload P2P IPv4 address (default 0.0.0.0) */
+    sideloadIpv4?: Buffer;
 }
 /** Event types emitted during lifecycle */
 export type OrchestratorEventType = 'state_change' | 'provider_found' | 'handshake_complete' | 'delivery_received' | 'payment_sent' | 'rated' | 'error';

@@ -141,6 +141,19 @@ export function parseDogeConfig(raw: unknown): DogeWalletConfig {
     throw new Error(`doge-wallet: invalid fee strategy "${cfg.fees.strategy}"`);
   }
 
+  // Validate QP config
+  if (cfg.qp) {
+    if (cfg.qp.defaultRating < 1 || cfg.qp.defaultRating > 5) {
+      throw new Error(`doge-wallet: qp.defaultRating must be 1-5, got ${cfg.qp.defaultRating}`);
+    }
+    if (cfg.qp.scanIntervalMs <= 0) {
+      throw new Error('doge-wallet: qp.scanIntervalMs must be positive');
+    }
+    if (cfg.qp.advertiseTtlBlocks <= 0) {
+      throw new Error('doge-wallet: qp.advertiseTtlBlocks must be positive');
+    }
+  }
+
   return cfg;
 }
 

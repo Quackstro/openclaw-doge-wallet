@@ -77,6 +77,7 @@ export declare function buildRatingTx(params: {
 }): typeof Transaction;
 /**
  * Sign a transaction with a private key.
+ * IMPORTANT: Caller is responsible for zeroing privateKeyBuf after use.
  */
 export declare function signTx(tx: typeof Transaction, privateKeyBuf: Buffer): typeof Transaction;
 /**

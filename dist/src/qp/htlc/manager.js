@@ -56,6 +56,10 @@ export class HTLCProviderManager {
         this.providerPrivkey = providerPrivkey;
         this.providerAddress = providerAddress;
     }
+    /** Zero sensitive key material */
+    destroy() {
+        this.providerPrivkey.fill(0);
+    }
     /**
      * Create a new HTLC offer (provider generates secret)
      */
@@ -189,6 +193,10 @@ export class HTLCConsumerManager {
         this.consumerPrivkey = consumerPrivkey;
         this.consumerAddress = consumerAddress;
     }
+    /** Zero sensitive key material */
+    destroy() {
+        this.consumerPrivkey.fill(0);
+    }
     /**
      * Accept an HTLC offer from provider
      */
@@ -271,6 +279,11 @@ export class HTLCConsumerManager {
             throw new Error(`HTLC not found: ${id}`);
         }
         const valid = verifySecret(secret, record.params.secretHash);
+        if (!valid) {
+            // Log failed verification attempt for diagnostics
+            const hashHex = record.params.secretHash.toString('hex').slice(0, 16) + '…';
+            process.stderr.write(`[QP/HTLC] verifyAndMarkClaimed failed for ${id} (secretHash=${hashHex})\n`);
+        }
         if (valid) {
             record.state = HTLCState.CLAIMED;
             record.secret = secret;
