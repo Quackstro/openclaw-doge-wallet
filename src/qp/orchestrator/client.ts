@@ -329,6 +329,7 @@ export class QPClient extends EventEmitter {
 
     // Step 1: Generate ephemeral key pair
     const ephemeral = generateEphemeralKeyPair();
+    try {
 
     // Step 2: Compute shared secret for INIT encryption
     const initSecret = ecdhSharedSecret(ephemeral.privateKey, provider.providerPubkey);
@@ -421,6 +422,11 @@ export class QPClient extends EventEmitter {
       sessionKey,
       remoteInfo: ack.remoteInfo,
     };
+    } catch (err) {
+      // Ensure ephemeral key is zeroed even on failure
+      ephemeral.privateKey.fill(0);
+      throw err;
+    }
   }
 
   /**

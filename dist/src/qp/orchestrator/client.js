@@ -216,80 +216,87 @@ export class QPClient extends EventEmitter {
         this.assertNotDestroyed();
         // Step 1: Generate ephemeral key pair
         const ephemeral = generateEphemeralKeyPair();
-        // Step 2: Compute shared secret for INIT encryption
-        const initSecret = ecdhSharedSecret(ephemeral.privateKey, provider.providerPubkey);
-        // Step 3: Encrypt our P2P connection details
-        const sessionId = randomBytes(4).readUInt32BE();
-        const nonce = randomBytes(4);
-        const timestamp = Math.floor(Date.now() / 1000);
-        const encKey = deriveHandshakeKey(initSecret, nonce);
-        const iv = deriveIv(nonce, timestamp);
-        // Our P2P details (consumer side)
-        const ourInfo = {
-            sessionId,
-            port: 8443,
-            ipv4: Buffer.from([0, 0, 0, 0]), // placeholder — real IP set by transport
-            protocol: SideloadProtocol.HTTPS,
-            token: randomBytes(8),
-        };
-        // Serialize P2P details as compact binary (19 bytes)
-        // Layout: session_id(4) + port(2) + ipv4(4) + protocol(1) + token(8)
-        const plaintext = Buffer.alloc(19);
-        plaintext.writeUInt32BE(sessionId, 0);
-        plaintext.writeUInt16BE(ourInfo.port, 4);
-        ourInfo.ipv4.copy(plaintext, 6, 0, 4);
-        plaintext.writeUInt8(ourInfo.protocol, 10);
-        ourInfo.token.copy(plaintext, 11, 0, 8);
-        const { ciphertext, tag } = aesGcmEncrypt(encKey, iv, plaintext);
-        const encryptedData = Buffer.concat([ciphertext, tag]);
-        // Step 4: Build HANDSHAKE_INIT payload
-        const initPayload = {
-            ephemeralPubkey: ephemeral.publicKey,
-            timestamp,
-            nonce,
-            encryptedData,
-        };
-        const opReturn = encodeMessage({
-            magic: QP_MAGIC,
-            version: QP_VERSION,
-            type: QPMessageType.HANDSHAKE_INIT,
-            payload: initPayload,
-        });
-        // Build and broadcast tx
-        const utxos = await this.config.getUtxos();
-        const tx = new Transaction();
-        for (const utxo of utxos) {
-            tx.from({
-                txId: utxo.txid,
-                outputIndex: utxo.vout,
-                satoshis: utxo.amount,
-                script: utxo.scriptPubKey,
+        try {
+            // Step 2: Compute shared secret for INIT encryption
+            const initSecret = ecdhSharedSecret(ephemeral.privateKey, provider.providerPubkey);
+            // Step 3: Encrypt our P2P connection details
+            const sessionId = randomBytes(4).readUInt32BE();
+            const nonce = randomBytes(4);
+            const timestamp = Math.floor(Date.now() / 1000);
+            const encKey = deriveHandshakeKey(initSecret, nonce);
+            const iv = deriveIv(nonce, timestamp);
+            // Our P2P details (consumer side)
+            const ourInfo = {
+                sessionId,
+                port: 8443,
+                ipv4: Buffer.from([0, 0, 0, 0]), // placeholder — real IP set by transport
+                protocol: SideloadProtocol.HTTPS,
+                token: randomBytes(8),
+            };
+            // Serialize P2P details as compact binary (19 bytes)
+            // Layout: session_id(4) + port(2) + ipv4(4) + protocol(1) + token(8)
+            const plaintext = Buffer.alloc(19);
+            plaintext.writeUInt32BE(sessionId, 0);
+            plaintext.writeUInt16BE(ourInfo.port, 4);
+            ourInfo.ipv4.copy(plaintext, 6, 0, 4);
+            plaintext.writeUInt8(ourInfo.protocol, 10);
+            ourInfo.token.copy(plaintext, 11, 0, 8);
+            const { ciphertext, tag } = aesGcmEncrypt(encKey, iv, plaintext);
+            const encryptedData = Buffer.concat([ciphertext, tag]);
+            // Step 4: Build HANDSHAKE_INIT payload
+            const initPayload = {
+                ephemeralPubkey: ephemeral.publicKey,
+                timestamp,
+                nonce,
+                encryptedData,
+            };
+            const opReturn = encodeMessage({
+                magic: QP_MAGIC,
+                version: QP_VERSION,
+                type: QPMessageType.HANDSHAKE_INIT,
+                payload: initPayload,
             });
+            // Build and broadcast tx
+            const utxos = await this.config.getUtxos();
+            const tx = new Transaction();
+            for (const utxo of utxos) {
+                tx.from({
+                    txId: utxo.txid,
+                    outputIndex: utxo.vout,
+                    satoshis: utxo.amount,
+                    script: utxo.scriptPubKey,
+                });
+            }
+            tx.to(provider.providerAddress, DUST_AMOUNT_KOINU);
+            tx.addOutput(new Transaction.Output({
+                satoshis: 0,
+                script: Script.buildDataOut(opReturn),
+            }));
+            tx.change(this.config.changeAddress);
+            tx.fee(DEFAULT_FEE_KOINU);
+            const signed = signTx(tx, this.config.privkey);
+            const txHex = serializeTx(signed);
+            const { txid: initTxId } = await broadcastTx(this.config.provider, txHex);
+            // Step 5: Wait for HANDSHAKE_ACK
+            // Poll the chain for ACK sent to our address
+            const ack = await this.waitForHandshakeAck(sessionId, ephemeral.privateKey, provider.providerPubkey);
+            // Step 6: Derive session key from double ECDH
+            // Session secret = our_ephemeral × their_ephemeral_pubkey
+            const sessionSecret = ecdhSharedSecret(ephemeral.privateKey, ack.ephemeralPubkey);
+            const sessionKey = deriveSessionKey(sessionSecret, sessionId);
+            // Zero ephemeral private key
+            ephemeral.privateKey.fill(0);
+            return {
+                sessionId,
+                sessionKey,
+                remoteInfo: ack.remoteInfo,
+            };
         }
-        tx.to(provider.providerAddress, DUST_AMOUNT_KOINU);
-        tx.addOutput(new Transaction.Output({
-            satoshis: 0,
-            script: Script.buildDataOut(opReturn),
-        }));
-        tx.change(this.config.changeAddress);
-        tx.fee(DEFAULT_FEE_KOINU);
-        const signed = signTx(tx, this.config.privkey);
-        const txHex = serializeTx(signed);
-        const { txid: initTxId } = await broadcastTx(this.config.provider, txHex);
-        // Step 5: Wait for HANDSHAKE_ACK
-        // Poll the chain for ACK sent to our address
-        const ack = await this.waitForHandshakeAck(sessionId, ephemeral.privateKey, provider.providerPubkey);
-        // Step 6: Derive session key from double ECDH
-        // Session secret = our_ephemeral × their_ephemeral_pubkey
-        const sessionSecret = ecdhSharedSecret(ephemeral.privateKey, ack.ephemeralPubkey);
-        const sessionKey = deriveSessionKey(sessionSecret, sessionId);
-        // Zero ephemeral private key
-        ephemeral.privateKey.fill(0);
-        return {
-            sessionId,
-            sessionKey,
-            remoteInfo: ack.remoteInfo,
-        };
+        catch (err) {
+            // Ensure ephemeral key is zeroed even on failure
+            ephemeral.privateKey.fill(0);
+            throw err;
+        }
     }
     /**
      * Poll chain for HANDSHAKE_ACK directed at us.

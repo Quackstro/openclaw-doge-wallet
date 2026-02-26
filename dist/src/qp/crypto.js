@@ -205,7 +205,11 @@ export function decompressPublicKey(publicKey) {
     if (publicKey.length !== 33) {
         throw new Error('Public key must be 33 or 65 bytes');
     }
-    const isOdd = publicKey[0] === 0x03;
+    const prefix = publicKey[0];
+    if (prefix !== 0x02 && prefix !== 0x03) {
+        throw new Error(`Invalid compressed public key prefix: 0x${prefix.toString(16).padStart(2, '0')}`);
+    }
+    const isOdd = prefix === 0x03;
     const x = publicKey.subarray(1, 33);
     const point = Point.fromX(isOdd, x);
     const result = Buffer.alloc(65);

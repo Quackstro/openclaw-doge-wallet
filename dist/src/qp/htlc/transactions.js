@@ -35,6 +35,10 @@ export function createHtlcOfferOpReturn(params) {
  * Create the OP_RETURN data for HTLC_CLAIM message
  */
 export function createHtlcClaimOpReturn(params) {
+    // Validate fundingTxId is a proper 32-byte hex string
+    if (!/^[0-9a-fA-F]{64}$/.test(params.fundingTxId)) {
+        throw new Error('fundingTxId must be a 64-character hex string (32 bytes)');
+    }
     // Convert txid to buffer (reverse byte order for display vs internal)
     const txidBuf = Buffer.from(params.fundingTxId, 'hex').reverse();
     const payload = {

@@ -2429,12 +2429,17 @@ const dogeWalletPlugin = {
             QPCallState = typesMod.CallState;
         }
         async function ensureQPClient() {
-            if (qpClient)
-                return qpClient;
             const initialized = await walletManager.isInitialized();
             if (!initialized || !walletManager.isUnlocked()) {
+                // Destroy cached instance if wallet is locked
+                if (qpClient) {
+                    qpClient.destroy();
+                    qpClient = null;
+                }
                 throw new Error('Wallet must be initialized and unlocked for QP operations');
             }
+            if (qpClient)
+                return qpClient;
             await loadQPModules();
             const address = await walletManager.getAddress();
             const privkey = walletManager.getPrivateKey();
@@ -2449,19 +2454,23 @@ const dogeWalletPlugin = {
                 address: address,
                 pubkey: pubkey,
                 privkey: privkeyCopy,
-                provider: primaryProvider,
+                provider,
                 getUtxos: async () => utxoManager.getUtxos(),
                 changeAddress: address,
             });
             return qpClient;
         }
         async function ensureQPProvider() {
-            if (qpProvider)
-                return qpProvider;
             const initialized = await walletManager.isInitialized();
             if (!initialized || !walletManager.isUnlocked()) {
+                if (qpProvider) {
+                    qpProvider.destroy();
+                    qpProvider = null;
+                }
                 throw new Error('Wallet must be initialized and unlocked for QP provider mode');
             }
+            if (qpProvider)
+                return qpProvider;
             await loadQPModules();
             const address = await walletManager.getAddress();
             const privkey = walletManager.getPrivateKey();
@@ -2497,7 +2506,7 @@ const dogeWalletPlugin = {
                 address: address,
                 pubkey: pubkey,
                 privkey: privkeyCopy,
-                provider: primaryProvider,
+                provider,
                 getUtxos: async () => utxoManager.getUtxos(),
                 changeAddress: address,
                 skills,
