@@ -121,15 +121,16 @@ export function buildClaimTransaction(params) {
     const tx = new Transaction();
     // Add HTLC input
     const scriptHash = hash160(redeemScript);
+    const p2shLockingScript = Script.fromBuffer(Buffer.concat([
+        Buffer.from([0xa9, 0x14]),
+        scriptHash,
+        Buffer.from([0x87]),
+    ]));
     tx.from({
         txId: fundingTxId,
         outputIndex: fundingOutputIndex,
         satoshis: htlcAmountKoinu,
-        script: Script.buildScriptHashOut(Script.fromBuffer(Buffer.concat([
-            Buffer.from([0xa9, 0x14]),
-            scriptHash,
-            Buffer.from([0x87]),
-        ]))),
+        script: p2shLockingScript,
     });
     // Output: Provider receives funds
     const outputAmount = htlcAmountKoinu - feeKoinu;
@@ -164,15 +165,16 @@ export function buildRefundTransaction(params) {
     tx.lockUntilBlockHeight(timeoutBlock);
     // Add HTLC input with sequence number that enables CLTV
     const scriptHash = hash160(redeemScript);
+    const p2shLockingScript = Script.fromBuffer(Buffer.concat([
+        Buffer.from([0xa9, 0x14]),
+        scriptHash,
+        Buffer.from([0x87]),
+    ]));
     tx.from({
         txId: fundingTxId,
         outputIndex: fundingOutputIndex,
         satoshis: htlcAmountKoinu,
-        script: Script.buildScriptHashOut(Script.fromBuffer(Buffer.concat([
-            Buffer.from([0xa9, 0x14]),
-            scriptHash,
-            Buffer.from([0x87]),
-        ]))),
+        script: p2shLockingScript,
     });
     // Set sequence number to allow CLTV (must be < 0xFFFFFFFF)
     tx.inputs[0].sequenceNumber = 0xFFFFFFFE;

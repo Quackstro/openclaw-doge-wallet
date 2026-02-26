@@ -85,6 +85,11 @@ export function decodeAddress(address: string): { version: number; hash: Buffer 
   } catch (err) {
     throw new Error(`Invalid Dogecoin address "${address}": ${(err as Error).message}`);
   }
+  if (decoded.length !== 21) {
+    throw new Error(
+      `Invalid address payload length: expected 21, got ${decoded.length}`
+    );
+  }
   return {
     version: decoded[0],
     hash: Buffer.from(decoded.subarray(1)),
@@ -123,6 +128,13 @@ export function encodeP2SHAddress(scriptHash: Buffer): string {
 export function pubkeyToAddress(pubkey: Buffer): string {
   if (pubkey.length !== 33 && pubkey.length !== 65) {
     throw new Error('Public key must be 33 (compressed) or 65 (uncompressed) bytes');
+  }
+  const prefix = pubkey[0];
+  if (pubkey.length === 33 && prefix !== 0x02 && prefix !== 0x03) {
+    throw new Error('Invalid compressed public key prefix');
+  }
+  if (pubkey.length === 65 && prefix !== 0x04) {
+    throw new Error('Invalid uncompressed public key prefix');
   }
   const pubkeyHash = hash160(pubkey);
   return encodeP2PKHAddress(pubkeyHash);

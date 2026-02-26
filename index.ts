@@ -3044,7 +3044,7 @@ const dogeWalletPlugin = {
         if (sub === "directory") {
           try {
             const client = await ensureQPClient();
-            const status = await primaryProvider.getNetworkInfo();
+            const status = await provider.getNetworkInfo();
             const directory = client.getDirectory();
             const active = directory.getActive(status.height);
 

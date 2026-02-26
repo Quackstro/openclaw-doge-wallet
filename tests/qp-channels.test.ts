@@ -191,7 +191,7 @@ describe("Commitment", () => {
   });
 
   it("maxChannelCalls = ttlBlocks / timelockGap", () => {
-    assert.equal(maxChannelCalls(params), Math.floor(params.ttlBlocks / params.timelockGap));
+    assert.equal(maxChannelCalls(params), Math.floor(params.ttlBlocks / params.timelockGap) - 1);
   });
 
   it("createInitialCommitment gives full balance to consumer", () => {

@@ -51,6 +51,7 @@ export class SessionManager {
      * Build an encrypted response message.
      */
     buildResponse(refId, body, meta) {
+        this.assertNotExpired();
         const msg = createMessage({ type: 'response', body, ref: refId, meta });
         const { envelope, nextCounter } = encryptMessage(this.session, msg);
         this.session.sendCounter = nextCounter;
@@ -60,6 +61,7 @@ export class SessionManager {
      * Build an encrypted error message.
      */
     buildError(refId, errorBody) {
+        this.assertNotExpired();
         const msg = createMessage({ type: 'error', body: errorBody, ref: refId });
         const { envelope, nextCounter } = encryptMessage(this.session, msg);
         this.session.sendCounter = nextCounter;
@@ -73,6 +75,9 @@ export class SessionManager {
      */
     buildChunks(data, chunkSize = 1_048_576, // 1 MB
     meta) {
+        if (chunkSize <= 0) {
+            throw new Error('chunkSize must be positive');
+        }
         if (data.length > SessionManager.MAX_CHUNK_PAYLOAD_SIZE) {
             throw new Error(`Payload too large for in-memory chunking: ${data.length} bytes ` +
                 `(max ${SessionManager.MAX_CHUNK_PAYLOAD_SIZE}). Use buildChunkIterator instead.`);
@@ -114,6 +119,8 @@ export class SessionManager {
     *buildChunkIterator(data, chunkSize = 1_048_576, meta) {
         const totalChunks = Math.ceil(data.length / chunkSize);
         for (let i = 0; i < totalChunks; i++) {
+            if (chunkSize <= 0)
+                throw new Error('chunkSize must be positive');
             const chunk = data.subarray(i * chunkSize, (i + 1) * chunkSize);
             const msg = createMessage({
                 type: 'chunk',

@@ -174,6 +174,9 @@ export class HTLCProviderManager {
     if (!record.secret) {
       throw new Error('HTLC secret missing (not provider?)');
     }
+    if (feeKoinu >= record.amountKoinu) {
+      throw new Error(`Claim fee (${feeKoinu}) must be less than HTLC amount (${record.amountKoinu})`);
+    }
 
     // Build claim transaction
     const claimTx = buildClaimTransaction({

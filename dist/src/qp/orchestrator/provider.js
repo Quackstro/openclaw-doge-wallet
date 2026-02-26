@@ -98,7 +98,11 @@ export class QPProvider extends EventEmitter {
         if (this.running)
             return;
         this.running = true;
+        let scanning = false;
         this.scanTimer = setInterval(async () => {
+            if (scanning)
+                return; // Prevent overlap
+            scanning = true;
             try {
                 await this.scanForHandshakes();
             }
@@ -106,6 +110,9 @@ export class QPProvider extends EventEmitter {
                 this.emitEvent('scan-error', 'error', CallState.FAILED, {
                     error: err instanceof Error ? err.message : String(err),
                 });
+            }
+            finally {
+                scanning = false;
             }
         }, this.config.scanIntervalMs);
     }
@@ -171,84 +178,87 @@ export class QPProvider extends EventEmitter {
         };
         // Step 2: Generate our ephemeral key pair
         const ephemeral = generateEphemeralKeyPair();
-        // Step 3: Compute session key
-        const sessionSecret = ecdhSharedSecret(ephemeral.privateKey, payload.ephemeralPubkey);
-        const sessionKey = deriveSessionKey(sessionSecret, sessionId);
-        // Step 4: Encrypt our P2P details
-        const ackNonce = randomBytes(4);
-        const ackEncKey = deriveHandshakeKey(ecdhSharedSecret(ephemeral.privateKey, payload.ephemeralPubkey), ackNonce);
-        const ackIv = deriveIv(ackNonce, sessionId);
-        const ourInfo = {
-            sessionId,
-            port: this.config.sideloadPort ?? 8443,
-            ipv4: this.config.sideloadIpv4 ?? Buffer.from([0, 0, 0, 0]),
-            protocol: SideloadProtocol.HTTPS,
-            token: randomBytes(8),
-        };
-        // Serialize P2P details as compact binary (19 bytes)
-        const ackPlaintext = Buffer.alloc(19);
-        ackPlaintext.writeUInt32BE(sessionId, 0);
-        ackPlaintext.writeUInt16BE(ourInfo.port, 4);
-        ourInfo.ipv4.copy(ackPlaintext, 6, 0, 4);
-        ackPlaintext.writeUInt8(ourInfo.protocol, 10);
-        ourInfo.token.copy(ackPlaintext, 11, 0, 8);
-        const { ciphertext, tag: ackTag } = aesGcmEncrypt(ackEncKey, ackIv, ackPlaintext);
-        const encryptedData = Buffer.concat([ciphertext, ackTag]);
-        // Step 5: Build and broadcast HANDSHAKE_ACK
-        const ackPayload = {
-            ephemeralPubkey: ephemeral.publicKey,
-            sessionId,
-            nonce: ackNonce,
-            encryptedData,
-        };
-        const opReturn = encodeMessage({
-            magic: QP_MAGIC,
-            version: QP_VERSION,
-            type: QPMessageType.HANDSHAKE_ACK,
-            payload: ackPayload,
-        });
-        const utxos = await this.config.getUtxos();
-        const tx = new Transaction();
-        for (const utxo of utxos) {
-            tx.from({
-                txId: utxo.txid,
-                outputIndex: utxo.vout,
-                satoshis: utxo.amount,
-                script: utxo.scriptPubKey,
+        try {
+            // Step 3: Compute session key
+            const sessionSecret = ecdhSharedSecret(ephemeral.privateKey, payload.ephemeralPubkey);
+            const sessionKey = deriveSessionKey(sessionSecret, sessionId);
+            // Step 4: Encrypt our P2P details
+            const ackNonce = randomBytes(4);
+            const ackEncKey = deriveHandshakeKey(ecdhSharedSecret(ephemeral.privateKey, payload.ephemeralPubkey), ackNonce);
+            const ackIv = deriveIv(ackNonce, sessionId);
+            const ourInfo = {
+                sessionId,
+                port: this.config.sideloadPort ?? 8443,
+                ipv4: this.config.sideloadIpv4 ?? Buffer.from([0, 0, 0, 0]),
+                protocol: SideloadProtocol.HTTPS,
+                token: randomBytes(8),
+            };
+            // Serialize P2P details as compact binary (19 bytes)
+            const ackPlaintext = Buffer.alloc(19);
+            ackPlaintext.writeUInt32BE(sessionId, 0);
+            ackPlaintext.writeUInt16BE(ourInfo.port, 4);
+            ourInfo.ipv4.copy(ackPlaintext, 6, 0, 4);
+            ackPlaintext.writeUInt8(ourInfo.protocol, 10);
+            ourInfo.token.copy(ackPlaintext, 11, 0, 8);
+            const { ciphertext, tag: ackTag } = aesGcmEncrypt(ackEncKey, ackIv, ackPlaintext);
+            const encryptedData = Buffer.concat([ciphertext, ackTag]);
+            // Step 5: Build and broadcast HANDSHAKE_ACK
+            const ackPayload = {
+                ephemeralPubkey: ephemeral.publicKey,
+                sessionId,
+                nonce: ackNonce,
+                encryptedData,
+            };
+            const opReturn = encodeMessage({
+                magic: QP_MAGIC,
+                version: QP_VERSION,
+                type: QPMessageType.HANDSHAKE_ACK,
+                payload: ackPayload,
+            });
+            const utxos = await this.config.getUtxos();
+            const tx = new Transaction();
+            for (const utxo of utxos) {
+                tx.from({
+                    txId: utxo.txid,
+                    outputIndex: utxo.vout,
+                    satoshis: utxo.amount,
+                    script: utxo.scriptPubKey,
+                });
+            }
+            tx.to(msg.senderAddress, DUST_AMOUNT_KOINU);
+            tx.addOutput(new Transaction.Output({
+                satoshis: 0,
+                script: Script.buildDataOut(opReturn),
+            }));
+            tx.change(this.config.changeAddress);
+            tx.fee(DEFAULT_FEE_KOINU);
+            const signed = signTx(tx, this.config.privkey);
+            const txHex = serializeTx(signed);
+            await broadcastTx(this.config.provider, txHex);
+            // Step 6: Create session
+            const sessionManager = new SessionManager({
+                sessionId,
+                sessionKey,
+                role: 'responder',
+                remoteInfo: consumerInfo,
+                ttlMs: this.config.sessionTtlMs,
+            });
+            this.sessions.set(sessionId, {
+                sessionId,
+                sessionKey,
+                remoteInfo: consumerInfo,
+                consumerAddress: msg.senderAddress,
+                sessionManager,
+                createdAt: Date.now(),
+            });
+            this.emitEvent(`session-${sessionId}`, 'handshake_complete', CallState.CONNECTING, {
+                sessionId,
+                consumerAddress: msg.senderAddress,
             });
         }
-        tx.to(msg.senderAddress, DUST_AMOUNT_KOINU);
-        tx.addOutput(new Transaction.Output({
-            satoshis: 0,
-            script: Script.buildDataOut(opReturn),
-        }));
-        tx.change(this.config.changeAddress);
-        tx.fee(DEFAULT_FEE_KOINU);
-        const signed = signTx(tx, this.config.privkey);
-        const txHex = serializeTx(signed);
-        await broadcastTx(this.config.provider, txHex);
-        // Zero ephemeral private key
-        ephemeral.privateKey.fill(0);
-        // Step 6: Create session
-        const sessionManager = new SessionManager({
-            sessionId,
-            sessionKey,
-            role: 'responder',
-            remoteInfo: consumerInfo,
-            ttlMs: this.config.sessionTtlMs,
-        });
-        this.sessions.set(sessionId, {
-            sessionId,
-            sessionKey,
-            remoteInfo: consumerInfo,
-            consumerAddress: msg.senderAddress,
-            sessionManager,
-            createdAt: Date.now(),
-        });
-        this.emitEvent(`session-${sessionId}`, 'handshake_complete', CallState.CONNECTING, {
-            sessionId,
-            consumerAddress: msg.senderAddress,
-        });
+        finally {
+            ephemeral.privateKey.fill(0);
+        }
     }
     // =========================================================================
     // Request handling

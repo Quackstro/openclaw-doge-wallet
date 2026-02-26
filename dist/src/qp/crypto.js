@@ -186,6 +186,9 @@ export function compressPublicKey(publicKey) {
         throw new Error('Public key must be 33 or 65 bytes');
     }
     // Uncompressed format: 0x04 || x (32 bytes) || y (32 bytes)
+    if (publicKey[0] !== 0x04) {
+        throw new Error('Invalid uncompressed public key prefix: expected 0x04');
+    }
     const x = publicKey.subarray(1, 33);
     const y = publicKey.subarray(33, 65);
     const yBN = BN.fromBuffer(y);

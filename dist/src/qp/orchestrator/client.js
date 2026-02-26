@@ -474,6 +474,9 @@ export class QPClient extends EventEmitter {
     async rateProvider(params) {
         this.assertNotDestroyed();
         const utxos = await this.config.getUtxos();
+        if (!/^[0-9a-fA-F]{64}$/.test(params.paymentTxId)) {
+            throw new Error('paymentTxId must be a 64-character hex string');
+        }
         const paymentTxidBuf = Buffer.from(params.paymentTxId, 'hex');
         const tx = buildRatingTx({
             rating: {

@@ -192,15 +192,16 @@ export function buildClaimTransaction(params: HTLCClaimParams): typeof Transacti
 
   // Add HTLC input
   const scriptHash = hash160(redeemScript);
+  const p2shLockingScript = Script.fromBuffer(Buffer.concat([
+    Buffer.from([0xa9, 0x14]),
+    scriptHash,
+    Buffer.from([0x87]),
+  ]));
   tx.from({
     txId: fundingTxId,
     outputIndex: fundingOutputIndex,
     satoshis: htlcAmountKoinu,
-    script: Script.buildScriptHashOut(Script.fromBuffer(Buffer.concat([
-      Buffer.from([0xa9, 0x14]),
-      scriptHash,
-      Buffer.from([0x87]),
-    ]))),
+    script: p2shLockingScript,
   });
 
   // Output: Provider receives funds
@@ -261,15 +262,16 @@ export function buildRefundTransaction(params: HTLCRefundParams): typeof Transac
 
   // Add HTLC input with sequence number that enables CLTV
   const scriptHash = hash160(redeemScript);
+  const p2shLockingScript = Script.fromBuffer(Buffer.concat([
+    Buffer.from([0xa9, 0x14]),
+    scriptHash,
+    Buffer.from([0x87]),
+  ]));
   tx.from({
     txId: fundingTxId,
     outputIndex: fundingOutputIndex,
     satoshis: htlcAmountKoinu,
-    script: Script.buildScriptHashOut(Script.fromBuffer(Buffer.concat([
-      Buffer.from([0xa9, 0x14]),
-      scriptHash,
-      Buffer.from([0x87]),
-    ]))),
+    script: p2shLockingScript,
   });
 
   // Set sequence number to allow CLTV (must be < 0xFFFFFFFF)

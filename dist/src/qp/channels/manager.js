@@ -282,6 +282,9 @@ export class ChannelConsumerManager extends BaseChannelManager {
             if (!record || !record.funding) {
                 throw new Error(`Channel not found: ${id}`);
             }
+            if (record.state !== ChannelState.OPEN) {
+                throw new Error(`Channel not in OPEN state: ${record.state}`);
+            }
             // Validate sequence continuity
             if (record.latestCommitment && state.sequence !== record.latestCommitment.sequence + 1) {
                 throw new Error(`Sequence mismatch: expected ${record.latestCommitment.sequence + 1}, got ${state.sequence}`);

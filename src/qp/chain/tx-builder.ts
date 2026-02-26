@@ -68,6 +68,14 @@ export function buildAdvertiseOpReturn(params: AdvertiseParams): Buffer {
   const nonce = Buffer.alloc(4);
   randomFillSync(nonce);
 
+  // Validate fields
+  if (!Buffer.isBuffer(params.pubkey) || params.pubkey.length !== 33) {
+    throw new Error('pubkey must be a 33-byte compressed public key');
+  }
+  if (params.priceKoinu < 0 || !Number.isFinite(params.priceKoinu)) {
+    throw new Error('priceKoinu must be a non-negative finite number');
+  }
+
   const payload: ServiceAdvertisePayload = {
     skillCode: params.skillCode,
     priceKoinu: params.priceKoinu,

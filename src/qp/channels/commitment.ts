@@ -50,7 +50,7 @@ export function maxChannelCalls(params: ChannelParams): number {
   if (params.timelockGap <= 0) {
     throw new Error('timelockGap must be positive');
   }
-  return Math.floor(params.ttlBlocks / params.timelockGap);
+  return Math.floor(params.ttlBlocks / params.timelockGap) - 1;
 }
 
 /**
@@ -313,8 +313,15 @@ export function buildCooperativeCloseTx(
     ]))),
   });
 
-  // Proportional fee split based on balances
+  // Validate balance conservation
   const totalBalance = state.consumerBalance + state.providerBalance;
+  if (totalBalance > funding.depositKoinu) {
+    throw new Error(
+      'Balance conservation violated: sum of balances exceeds deposit'
+    );
+  }
+
+  // Proportional fee split based on balances
   let consumerPays: number;
   let providerPays: number;
   if (totalBalance === 0) {

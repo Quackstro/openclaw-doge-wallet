@@ -218,7 +218,7 @@ export class RegistryWatcher {
         this.directory.add(listing);
         newListings.push(listing);
 
-        // Track highest block
+        // Always advance block checkpoint regardless of whether listing was new
         if (msg.blockHeight) {
           const prev = this.state.lastScannedBlock[category] ?? 0;
           if (msg.blockHeight > prev) {

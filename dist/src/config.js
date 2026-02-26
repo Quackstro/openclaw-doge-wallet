@@ -126,6 +126,16 @@ export function parseDogeConfig(raw) {
     }
     // Validate QP config
     if (cfg.qp) {
+        if (Array.isArray(cfg.qp.skills)) {
+            for (const skill of cfg.qp.skills) {
+                if (!skill.skillCode || typeof skill.skillCode !== "number") {
+                    throw new Error('doge-wallet: qp.skills[].skillCode is required and must be a number');
+                }
+                if (skill.priceDoge != null && (typeof skill.priceDoge !== "number" || skill.priceDoge < 0)) {
+                    throw new Error('doge-wallet: qp.skills[].priceDoge must be a non-negative number');
+                }
+            }
+        }
         if (cfg.qp.defaultRating < 1 || cfg.qp.defaultRating > 5) {
             throw new Error(`doge-wallet: qp.defaultRating must be 1-5, got ${cfg.qp.defaultRating}`);
         }

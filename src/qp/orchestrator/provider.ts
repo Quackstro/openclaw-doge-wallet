@@ -175,13 +175,18 @@ export class QPProvider extends EventEmitter {
     if (this.running) return;
     this.running = true;
 
+    let scanning = false;
     this.scanTimer = setInterval(async () => {
+      if (scanning) return; // Prevent overlap
+      scanning = true;
       try {
         await this.scanForHandshakes();
       } catch (err) {
         this.emitEvent('scan-error', 'error', CallState.FAILED, {
           error: err instanceof Error ? err.message : String(err),
         });
+      } finally {
+        scanning = false;
       }
     }, this.config.scanIntervalMs!);
   }
@@ -262,6 +267,7 @@ export class QPProvider extends EventEmitter {
 
     // Step 2: Generate our ephemeral key pair
     const ephemeral = generateEphemeralKeyPair();
+    try {
 
     // Step 3: Compute session key
     const sessionSecret = ecdhSharedSecret(ephemeral.privateKey, payload.ephemeralPubkey);
@@ -331,9 +337,6 @@ export class QPProvider extends EventEmitter {
     const txHex = serializeTx(signed);
     await broadcastTx(this.config.provider, txHex);
 
-    // Zero ephemeral private key
-    ephemeral.privateKey.fill(0);
-
     // Step 6: Create session
     const sessionManager = new SessionManager({
       sessionId,
@@ -356,6 +359,9 @@ export class QPProvider extends EventEmitter {
       sessionId,
       consumerAddress: msg.senderAddress,
     });
+    } finally {
+      ephemeral.privateKey.fill(0);
+    }
   }
 
   // =========================================================================

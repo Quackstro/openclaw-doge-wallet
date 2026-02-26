@@ -99,6 +99,7 @@ export class SessionManager {
     body: Buffer | Record<string, unknown>,
     meta?: SideloadMeta
   ): Buffer {
+    this.assertNotExpired();
     const msg = createMessage({ type: 'response', body, ref: refId, meta });
     const { envelope, nextCounter } = encryptMessage(this.session, msg);
     this.session.sendCounter = nextCounter;
@@ -112,6 +113,7 @@ export class SessionManager {
     refId: string,
     errorBody: Record<string, unknown>
   ): Buffer {
+    this.assertNotExpired();
     const msg = createMessage({ type: 'error', body: errorBody, ref: refId });
     const { envelope, nextCounter } = encryptMessage(this.session, msg);
     this.session.sendCounter = nextCounter;
@@ -130,6 +132,9 @@ export class SessionManager {
     chunkSize: number = 1_048_576, // 1 MB
     meta?: Partial<SideloadMeta>
   ): Buffer[] {
+    if (chunkSize <= 0) {
+      throw new Error('chunkSize must be positive');
+    }
     if (data.length > SessionManager.MAX_CHUNK_PAYLOAD_SIZE) {
       throw new Error(
         `Payload too large for in-memory chunking: ${data.length} bytes ` +
@@ -182,6 +187,7 @@ export class SessionManager {
     const totalChunks = Math.ceil(data.length / chunkSize);
 
     for (let i = 0; i < totalChunks; i++) {
+    if (chunkSize <= 0) throw new Error('chunkSize must be positive');
       const chunk = data.subarray(i * chunkSize, (i + 1) * chunkSize);
       const msg = createMessage({
         type: 'chunk',
