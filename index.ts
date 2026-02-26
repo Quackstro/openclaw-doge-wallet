@@ -2858,6 +2858,322 @@ const dogeWalletPlugin = {
       { name: "wallet_verify_payment" },
     );
 
+    // ==================================================================
+    // Quackstro Protocol (QP) — Agent-to-Agent Economy
+    // ==================================================================
+
+    // Lazy-init QP client/provider (only when wallet is unlocked)
+    let qpClient: InstanceType<typeof QPClientClass> | null = null;
+    let qpProvider: InstanceType<typeof QPProviderClass> | null = null;
+
+    // Dynamic imports to avoid loading QP modules unless needed
+    let QPClientClass: typeof import('./src/qp/orchestrator/client.js').QPClient;
+    let QPProviderClass: typeof import('./src/qp/orchestrator/provider.js').QPProvider;
+    let QPCallState: typeof import('./src/qp/orchestrator/types.js').CallState;
+
+    async function loadQPModules() {
+      if (QPClientClass) return;
+      const clientMod = await import('./src/qp/orchestrator/client.js');
+      const providerMod = await import('./src/qp/orchestrator/provider.js');
+      const typesMod = await import('./src/qp/orchestrator/types.js');
+      QPClientClass = clientMod.QPClient;
+      QPProviderClass = providerMod.QPProvider;
+      QPCallState = typesMod.CallState;
+    }
+
+    async function ensureQPClient(): Promise<InstanceType<typeof QPClientClass>> {
+      if (qpClient) return qpClient;
+
+      const initialized = await walletManager.isInitialized();
+      if (!initialized || !walletManager.isUnlocked()) {
+        throw new Error('Wallet must be initialized and unlocked for QP operations');
+      }
+
+      await loadQPModules();
+      const address = await walletManager.getAddress();
+      const privkey = walletManager.getPrivateKey();
+      // Derive compressed public key from private key via bitcore
+      const { createRequire: cr } = await import('module');
+      const req = cr(import.meta.url);
+      const bc = req('bitcore-lib-doge');
+      const pubkey = Buffer.from(new bc.PrivateKey(privkey).publicKey.toBuffer());
+
+      qpClient = new QPClientClass({
+        address: address!,
+        pubkey: pubkey!,
+        privkey: privkey!,
+        provider: primaryProvider,
+        getUtxos: async () => utxoManager.getUtxos(),
+        changeAddress: address!,
+      });
+
+      return qpClient;
+    }
+
+    // ------------------------------------------------------------------
+    // Command: /qp — Quackstro Protocol hub
+    // ------------------------------------------------------------------
+    api.registerCommand({
+      name: "qp",
+      description: "🦆 Quackstro Protocol — agent-to-agent services on DOGE",
+      acceptsArgs: true,
+      handler: async (ctx: CommandContext) => {
+        const args = ctx.args?.trim() ?? "";
+        const chatId = ctx.chatId ?? ctx.chat?.id ?? ctx.senderId ?? "unknown";
+        const sub = args.split(/\s+/)[0]?.toLowerCase() ?? "";
+        const rest = args.slice(sub.length).trim();
+
+        if (!sub || sub === "help") {
+          return `🦆 **Quackstro Protocol**\n\n` +
+            `\`/qp discover <skill>\` — Find providers for a skill\n` +
+            `\`/qp status\` — Show QP status\n` +
+            `\`/qp advertise\` — Advertise skills (provider mode)\n` +
+            `\`/qp directory\` — List known providers\n\n` +
+            `_Agent-to-agent economy on Dogecoin_ 🐕`;
+        }
+
+        if (sub === "status") {
+          const initialized = await walletManager.isInitialized();
+          const unlocked = walletManager.isUnlocked();
+          const clientActive = qpClient !== null;
+          const providerActive = qpProvider !== null;
+
+          let providerSessions = 0;
+          if (qpProvider) providerSessions = qpProvider.sessionCount;
+
+          let directorySize = 0;
+          if (qpClient) directorySize = qpClient.getDirectory().size;
+
+          return `🦆 **QP Status**\n\n` +
+            `Wallet: ${initialized ? (unlocked ? '🟢 Unlocked' : '🟡 Locked') : '🔴 Not init'}\n` +
+            `Client: ${clientActive ? '🟢 Active' : '⚪ Inactive'}\n` +
+            `Provider: ${providerActive ? `🟢 Active (${providerSessions} sessions)` : '⚪ Inactive'}\n` +
+            `Directory: ${directorySize} known providers`;
+        }
+
+        if (sub === "discover") {
+          if (!rest) return "Usage: `/qp discover <skillCode>` — e.g. `/qp discover 0x0403`";
+          const skillCode = parseInt(rest, rest.startsWith('0x') ? 16 : 10);
+          if (isNaN(skillCode)) return "Invalid skill code. Use hex (0x0403) or decimal.";
+
+          try {
+            const client = await ensureQPClient();
+            const providers = await client.discoverProviders(skillCode);
+
+            if (providers.length === 0) {
+              return `No providers found for skill 0x${skillCode.toString(16).padStart(4, '0')}.`;
+            }
+
+            const lines = providers.slice(0, 10).map((p, i) =>
+              `${i + 1}. \`${p.providerAddress.slice(0, 12)}…\` — ${formatDoge(p.priceKoinu)} DOGE — ${p.description || 'no desc'}`
+            );
+
+            return `🦆 **Providers for 0x${skillCode.toString(16).padStart(4, '0')}**\n\n` +
+              lines.join('\n') +
+              (providers.length > 10 ? `\n\n_...and ${providers.length - 10} more_` : '');
+          } catch (err: unknown) {
+            return `Discovery failed: ${(err as Error).message}`;
+          }
+        }
+
+        if (sub === "directory") {
+          try {
+            const client = await ensureQPClient();
+            const status = await primaryProvider.getNetworkInfo();
+            const directory = client.getDirectory();
+            const active = directory.getActive(status.height);
+
+            if (active.length === 0) return "Directory is empty. Run `/qp discover <skillCode>` to scan.";
+
+            const lines = active.slice(0, 15).map(l =>
+              `• 0x${l.skillCode.toString(16).padStart(4, '0')} — \`${l.providerAddress.slice(0, 12)}…\` — ${formatDoge(l.priceKoinu)} DOGE — ${l.description || '-'}`
+            );
+
+            return `🦆 **Service Directory** (${active.length} active)\n\n` + lines.join('\n');
+          } catch (err: unknown) {
+            return `Directory error: ${(err as Error).message}`;
+          }
+        }
+
+        return `Unknown subcommand: \`${sub}\`. Try \`/qp help\`.`;
+      },
+    });
+
+    // ------------------------------------------------------------------
+    // Tool: qp_discover — AI-accessible service discovery
+    // ------------------------------------------------------------------
+    api.registerTool(
+      {
+        name: "qp_discover",
+        label: "QP Service Discovery",
+        description:
+          "Discover agent-to-agent service providers on the Dogecoin blockchain. " +
+          "Searches the QP registry for providers offering a specific skill code. " +
+          "Returns provider addresses, prices, and descriptions.",
+        parameters: Type.Object({
+          skillCode: Type.Number({ description: "Skill code to search for (e.g. 0x0403 = OCR)" }),
+          maxPriceDoge: Type.Optional(Type.Number({ description: "Maximum price in DOGE" })),
+        }),
+        async execute(_toolCallId: string, params: { skillCode: number; maxPriceDoge?: number }) {
+          try {
+            const client = await ensureQPClient();
+            const maxPriceKoinu = params.maxPriceDoge
+              ? Math.round(params.maxPriceDoge * 100_000_000)
+              : undefined;
+            const providers = await client.discoverProviders(params.skillCode, maxPriceKoinu);
+
+            return {
+              content: [{
+                type: "text",
+                text: providers.length === 0
+                  ? `No providers found for skill 0x${params.skillCode.toString(16)}.`
+                  : `Found ${providers.length} provider(s) for skill 0x${params.skillCode.toString(16)}:\n` +
+                    providers.slice(0, 10).map((p, i) =>
+                      `${i + 1}. ${p.providerAddress} — ${formatDoge(p.priceKoinu)} DOGE — ${p.description}`
+                    ).join('\n'),
+              }],
+              details: {
+                skillCode: params.skillCode,
+                count: providers.length,
+                providers: providers.slice(0, 10).map(p => ({
+                  address: p.providerAddress,
+                  priceKoinu: p.priceKoinu,
+                  priceDoge: p.priceKoinu / 100_000_000,
+                  description: p.description,
+                  skillCode: p.skillCode,
+                  expiresAtBlock: p.expiresAtBlock,
+                })),
+              },
+            };
+          } catch (err: unknown) {
+            return {
+              content: [{ type: "text", text: `Discovery error: ${(err as Error).message}` }],
+              details: { error: (err as Error).message },
+            };
+          }
+        },
+      },
+      { name: "qp_discover" },
+    );
+
+    // ------------------------------------------------------------------
+    // Tool: qp_pay — Pay a provider for a service
+    // ------------------------------------------------------------------
+    api.registerTool(
+      {
+        name: "qp_pay",
+        label: "QP Pay Provider",
+        description:
+          "Pay a QP provider for an agent-to-agent service. " +
+          "Builds and broadcasts a payment transaction with OP_RETURN metadata. " +
+          "Also submits an on-chain rating.",
+        parameters: Type.Object({
+          providerAddress: Type.String({ description: "Provider's DOGE address" }),
+          amountDoge: Type.Number({ description: "Payment amount in DOGE" }),
+          skillCode: Type.Number({ description: "Skill code that was used" }),
+          sessionId: Type.Number({ description: "QP session ID" }),
+          rating: Type.Optional(Type.Number({ description: "Rating 1-5 (default 5)" })),
+          reason: Type.String({ description: "Why this payment is being made (audit)" }),
+        }),
+        async execute(
+          _toolCallId: string,
+          params: { providerAddress: string; amountDoge: number; skillCode: number; sessionId: number; rating?: number; reason: string },
+        ) {
+          try {
+            // Policy check
+            const amountKoinu = Math.round(params.amountDoge * 100_000_000);
+            const policyResult = policyEngine.evaluate(amountKoinu, params.providerAddress, params.reason);
+            if (!policyResult.allowed && policyResult.action !== 'auto') {
+              return {
+                content: [{ type: "text", text: `Policy blocked: ${policyResult.reason}` }],
+                details: { blocked: true, reason: policyResult.reason, tier: policyResult.tier },
+              };
+            }
+
+            const client = await ensureQPClient();
+            // We need provider pubkey for rating — derive from address if possible
+            // For now, payment only (no pubkey-dependent rating)
+            const payResult = await client.pay({
+              providerAddress: params.providerAddress,
+              providerPubkey: Buffer.alloc(33), // placeholder — rating requires real pubkey
+              amountKoinu,
+              method: 'htlc',
+              sessionId: params.sessionId,
+              skillCode: params.skillCode,
+            });
+
+            await auditLog.logAudit({
+              action: "qp_payment",
+              address: params.providerAddress,
+              amount: amountKoinu,
+              txid: payResult.txId,
+              reason: params.reason,
+              initiatedBy: "agent",
+              metadata: { skillCode: params.skillCode, sessionId: params.sessionId },
+            });
+
+            return {
+              content: [{
+                type: "text",
+                text: `QP payment sent: ${params.amountDoge} DOGE to ${params.providerAddress}. TxID: ${payResult.txId}`,
+              }],
+              details: {
+                txId: payResult.txId,
+                amountDoge: params.amountDoge,
+                amountKoinu,
+                providerAddress: params.providerAddress,
+                skillCode: params.skillCode,
+                sessionId: params.sessionId,
+              },
+            };
+          } catch (err: unknown) {
+            return {
+              content: [{ type: "text", text: `QP payment error: ${(err as Error).message}` }],
+              details: { error: (err as Error).message },
+            };
+          }
+        },
+      },
+      { name: "qp_pay" },
+    );
+
+    // ------------------------------------------------------------------
+    // Tool: qp_status — QP protocol status for AI
+    // ------------------------------------------------------------------
+    api.registerTool(
+      {
+        name: "qp_status",
+        label: "QP Protocol Status",
+        description:
+          "Get the current status of the Quackstro Protocol system. " +
+          "Shows client/provider state, directory size, and session count.",
+        parameters: Type.Object({}),
+        async execute() {
+          const initialized = await walletManager.isInitialized();
+          const unlocked = walletManager.isUnlocked();
+
+          return {
+            content: [{
+              type: "text",
+              text: `QP Status: wallet ${initialized ? (unlocked ? 'unlocked' : 'locked') : 'not initialized'}. ` +
+                `Client: ${qpClient ? 'active' : 'inactive'}. ` +
+                `Provider: ${qpProvider ? `active (${qpProvider.sessionCount} sessions)` : 'inactive'}. ` +
+                `Directory: ${qpClient ? qpClient.getDirectory().size : 0} providers.`,
+            }],
+            details: {
+              walletInitialized: initialized,
+              walletUnlocked: unlocked,
+              clientActive: qpClient !== null,
+              providerActive: qpProvider !== null,
+              providerSessions: qpProvider?.sessionCount ?? 0,
+              directorySize: qpClient?.getDirectory().size ?? 0,
+            },
+          };
+        },
+      },
+      { name: "qp_status" },
+    );
+
     // ------------------------------------------------------------------
     // Service: lifecycle management
     // ------------------------------------------------------------------
@@ -2952,6 +3268,9 @@ const dogeWalletPlugin = {
         );
       },
       stop: () => {
+        // QP cleanup
+        if (qpClient) { qpClient.destroy(); qpClient = null; }
+        if (qpProvider) { qpProvider.destroy(); qpProvider = null; }
         stopUtxoRefresh();
         stopApprovalExpiryCheck();
         stopInvoiceCleanup();

@@ -184,7 +184,7 @@ export interface DogeWalletConfig {
     /** Chat IDs authorized to approve/deny sends. Empty = any caller allowed (legacy behavior). */
     ownerChatIds?: string[];
 }
-export type AuditAction = "send" | "receive" | "approve" | "deny" | "freeze" | "unfreeze" | "consolidate" | "invoice_created" | "invoice_paid" | "key_rotation" | "address_generated" | "policy_change" | "balance_check" | "preflight_check" | "wallet_deleted" | "error";
+export type AuditAction = "send" | "receive" | "approve" | "deny" | "freeze" | "unfreeze" | "consolidate" | "invoice_created" | "invoice_paid" | "key_rotation" | "address_generated" | "policy_change" | "balance_check" | "preflight_check" | "wallet_deleted" | "qp_payment" | "qp_discovery" | "error";
 export interface AuditEntry {
     id: string;
     timestamp: string;

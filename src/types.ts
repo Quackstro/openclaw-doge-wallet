@@ -258,6 +258,8 @@ export type AuditAction =
   | "balance_check"
   | "preflight_check"
   | "wallet_deleted"
+  | "qp_payment"
+  | "qp_discovery"
   | "error";
 
 export interface AuditEntry {
