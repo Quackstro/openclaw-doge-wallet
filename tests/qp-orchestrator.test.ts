@@ -535,6 +535,63 @@ describe('QPProvider', () => {
 // CallState enum
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Handshake Binary Encoding
+// ---------------------------------------------------------------------------
+
+describe('Handshake binary encoding', () => {
+  it('compact P2P details round-trip (19 bytes)', () => {
+    const sessionId = 0xDEADBEEF;
+    const port = 8443;
+    const ipv4 = Buffer.from([192, 168, 1, 42]);
+    const protocol = 1;
+    const token = randomBytes(8);
+
+    // Encode (same logic as client.ts)
+    const buf = Buffer.alloc(19);
+    buf.writeUInt32BE(sessionId, 0);
+    buf.writeUInt16BE(port, 4);
+    ipv4.copy(buf, 6, 0, 4);
+    buf.writeUInt8(protocol, 10);
+    token.copy(buf, 11, 0, 8);
+
+    assert.equal(buf.length, 19);
+
+    // Decode (same logic as provider.ts)
+    const dSessionId = buf.readUInt32BE(0);
+    const dPort = buf.readUInt16BE(4);
+    const dIpv4 = buf.subarray(6, 10);
+    const dProtocol = buf.readUInt8(10);
+    const dToken = buf.subarray(11, 19);
+
+    assert.equal(dSessionId, sessionId);
+    assert.equal(dPort, port);
+    assert.deepEqual(dIpv4, ipv4);
+    assert.equal(dProtocol, protocol);
+    assert.deepEqual(dToken, token);
+  });
+
+  it('encrypted payload fits in 35 bytes (19 ct + 16 tag)', () => {
+    const { aesGcmEncrypt, deriveHandshakeKey, deriveIv } = require('../dist/src/qp/crypto.js');
+
+    const key = randomBytes(32);
+    const nonce = randomBytes(4);
+    const encKey = deriveHandshakeKey(key, nonce);
+    const iv = deriveIv(nonce, 12345);
+
+    const plaintext = Buffer.alloc(19); // compact P2P details
+    plaintext.writeUInt32BE(0x12345678, 0);
+    plaintext.writeUInt16BE(443, 4);
+
+    const { ciphertext, tag } = aesGcmEncrypt(encKey, iv, plaintext);
+    const encrypted = Buffer.concat([ciphertext, tag]);
+
+    assert.equal(ciphertext.length, 19, 'ciphertext should be 19 bytes');
+    assert.equal(tag.length, 16, 'tag should be 16 bytes');
+    assert.equal(encrypted.length, 35, 'encrypted_data should be exactly 35 bytes');
+  });
+});
+
 describe('CallState', () => {
   it('has all expected states', () => {
     assert.equal(CallState.DISCOVERING, 'discovering');

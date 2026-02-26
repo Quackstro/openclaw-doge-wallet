@@ -154,18 +154,20 @@ export class QPProvider extends EventEmitter {
         const iv = deriveIv(payload.nonce, payload.timestamp);
         const ct = payload.encryptedData.subarray(0, payload.encryptedData.length - 16);
         const tag = payload.encryptedData.subarray(payload.encryptedData.length - 16);
-        const plaintext = aesGcmDecrypt(encKey, iv, ct, tag);
-        const consumerDetails = JSON.parse(plaintext.toString('utf8'));
-        const sessionId = consumerDetails.session_id;
+        const pt = aesGcmDecrypt(encKey, iv, ct, tag);
+        // Decode compact binary (19 bytes)
+        if (pt.length < 19)
+            return;
+        const sessionId = pt.readUInt32BE(0);
         // Skip if we already have this session
         if (this.sessions.has(sessionId))
             return;
         const consumerInfo = {
             sessionId,
-            port: consumerDetails.port,
-            ipv4: Buffer.from(consumerDetails.ipv4),
-            protocol: consumerDetails.protocol,
-            token: Buffer.from(consumerDetails.token, 'hex'),
+            port: pt.readUInt16BE(4),
+            ipv4: Buffer.from(pt.subarray(6, 10)),
+            protocol: pt.readUInt8(10),
+            token: Buffer.from(pt.subarray(11, 19)),
         };
         // Step 2: Generate our ephemeral key pair
         const ephemeral = generateEphemeralKeyPair();
@@ -183,13 +185,13 @@ export class QPProvider extends EventEmitter {
             protocol: SideloadProtocol.HTTPS,
             token: randomBytes(8),
         };
-        const ackPlaintext = Buffer.from(JSON.stringify({
-            session_id: sessionId,
-            port: ourInfo.port,
-            ipv4: Array.from(ourInfo.ipv4),
-            protocol: ourInfo.protocol,
-            token: ourInfo.token.toString('hex'),
-        }));
+        // Serialize P2P details as compact binary (19 bytes)
+        const ackPlaintext = Buffer.alloc(19);
+        ackPlaintext.writeUInt32BE(sessionId, 0);
+        ackPlaintext.writeUInt16BE(ourInfo.port, 4);
+        ourInfo.ipv4.copy(ackPlaintext, 6, 0, 4);
+        ackPlaintext.writeUInt8(ourInfo.protocol, 10);
+        ourInfo.token.copy(ackPlaintext, 11, 0, 8);
         const { ciphertext, tag: ackTag } = aesGcmEncrypt(ackEncKey, ackIv, ackPlaintext);
         const encryptedData = Buffer.concat([ciphertext, ackTag]);
         // Step 5: Build and broadcast HANDSHAKE_ACK

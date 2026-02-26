@@ -3203,11 +3203,16 @@ const dogeWalletPlugin = {
             }
 
             const client = await ensureQPClient();
-            // We need provider pubkey for rating — derive from address if possible
-            // For now, payment only (no pubkey-dependent rating)
+            // Look up provider pubkey from directory (populated by prior discovery)
+            const directory = client.getDirectory();
+            const listings = directory.findByProvider(params.providerAddress);
+            const providerPubkey = listings.length > 0
+              ? listings[0].providerPubkey
+              : Buffer.alloc(33); // fallback if not in directory
+
             const payResult = await client.pay({
               providerAddress: params.providerAddress,
-              providerPubkey: Buffer.alloc(33), // placeholder — rating requires real pubkey
+              providerPubkey,
               amountKoinu,
               method: 'htlc',
               sessionId: params.sessionId,

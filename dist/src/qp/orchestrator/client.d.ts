@@ -77,6 +77,7 @@ export declare class QPClient extends EventEmitter {
         sessionId: number;
         skillCode: number;
         channelId?: string;
+        deliveryHash?: Buffer;
     }): Promise<{
         txId: string;
         htlcId?: string;

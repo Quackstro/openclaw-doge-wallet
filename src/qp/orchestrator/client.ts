@@ -17,6 +17,7 @@ import {
   deriveIv,
   generateEphemeralKeyPair,
   hash160,
+  sha256,
 } from '../crypto.js';
 import {
   encodeMessage,
@@ -199,6 +200,12 @@ export class QPClient extends EventEmitter {
       // Step 5: Pay
       this.emitEvent(callId, 'state_change', CallState.PAYING);
       const method: PaymentMethod = request.preferredPayment ?? 'htlc';
+      // Compute delivery hash for audit trail
+      const deliveryBuf = Buffer.isBuffer(delivery.body)
+        ? delivery.body
+        : Buffer.from(JSON.stringify(delivery.body));
+      const deliveryHash = sha256(deliveryBuf);
+
       const payment = await this.pay({
         providerAddress: provider.providerAddress,
         providerPubkey: provider.providerPubkey,
@@ -206,6 +213,7 @@ export class QPClient extends EventEmitter {
         method,
         sessionId: handshake.sessionId,
         skillCode: request.skillCode,
+        deliveryHash,
       });
       call.paymentTxId = payment.txId;
       call.htlcId = payment.htlcId;
@@ -342,14 +350,14 @@ export class QPClient extends EventEmitter {
       token: randomBytes(8),
     };
 
-    // Serialize and encrypt P2P details
-    const plaintext = Buffer.from(JSON.stringify({
-      session_id: sessionId,
-      port: ourInfo.port,
-      ipv4: Array.from(ourInfo.ipv4),
-      protocol: ourInfo.protocol,
-      token: ourInfo.token.toString('hex'),
-    }));
+    // Serialize P2P details as compact binary (19 bytes)
+    // Layout: session_id(4) + port(2) + ipv4(4) + protocol(1) + token(8)
+    const plaintext = Buffer.alloc(19);
+    plaintext.writeUInt32BE(sessionId, 0);
+    plaintext.writeUInt16BE(ourInfo.port, 4);
+    ourInfo.ipv4.copy(plaintext, 6, 0, 4);
+    plaintext.writeUInt8(ourInfo.protocol, 10);
+    ourInfo.token.copy(plaintext, 11, 0, 8);
 
     const { ciphertext, tag } = aesGcmEncrypt(encKey, iv, plaintext);
     const encryptedData = Buffer.concat([ciphertext, tag]);
@@ -451,20 +459,21 @@ export class QPClient extends EventEmitter {
           const ct = payload.encryptedData.subarray(0, payload.encryptedData.length - 16);
           const tag = payload.encryptedData.subarray(payload.encryptedData.length - 16);
 
-          const plaintext = aesGcmDecrypt(encKey, iv, ct, tag);
-          const details = JSON.parse(plaintext.toString('utf8'));
+          const pt = aesGcmDecrypt(encKey, iv, ct, tag);
 
-          // Verify session ID matches
-          if (details.session_id !== sessionId) continue;
+          // Decode compact binary (19 bytes)
+          if (pt.length < 19) continue;
+          const ackSessionId = pt.readUInt32BE(0);
+          if (ackSessionId !== sessionId) continue;
 
           return {
             ephemeralPubkey: payload.ephemeralPubkey,
             remoteInfo: {
-              sessionId: details.session_id,
-              port: details.port,
-              ipv4: Buffer.from(details.ipv4),
-              protocol: details.protocol,
-              token: Buffer.from(details.token, 'hex'),
+              sessionId: ackSessionId,
+              port: pt.readUInt16BE(4),
+              ipv4: Buffer.from(pt.subarray(6, 10)),
+              protocol: pt.readUInt8(10),
+              token: Buffer.from(pt.subarray(11, 19)),
             },
           };
         } catch {
@@ -578,6 +587,7 @@ export class QPClient extends EventEmitter {
     sessionId: number;
     skillCode: number;
     channelId?: string;
+    deliveryHash?: Buffer;
   }): Promise<{ txId: string; htlcId?: string }> {
     this.assertNotDestroyed();
 
