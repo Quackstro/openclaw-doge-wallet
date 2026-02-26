@@ -60,12 +60,6 @@ export var RetiredReason;
     RetiredReason[RetiredReason["COMPROMISED"] = 2] = "COMPROMISED";
     RetiredReason[RetiredReason["MIGRATING"] = 3] = "MIGRATING";
 })(RetiredReason || (RetiredReason = {}));
-// Sideload protocol types
-export var SideloadProtocol;
-(function (SideloadProtocol) {
-    SideloadProtocol[SideloadProtocol["HTTPS"] = 0] = "HTTPS";
-    SideloadProtocol[SideloadProtocol["LIBP2P"] = 1] = "LIBP2P";
-})(SideloadProtocol || (SideloadProtocol = {}));
 // ============================================
 // Skill Codes (§13)
 // ============================================

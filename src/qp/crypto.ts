@@ -39,7 +39,23 @@ export function ecdhSharedSecret(privateKey: Buffer, publicKey: Buffer): Buffer 
   }
   
   // Parse the public key as an elliptic curve point
-  const pubPoint = Point.fromX(publicKey[0] === 0x03, publicKey.subarray(1, 33));
+  let pubPoint: InstanceType<typeof Point>;
+  if (publicKey.length === 33) {
+    // Compressed: 0x02 (even y) or 0x03 (odd y)
+    const prefix = publicKey[0];
+    if (prefix !== 0x02 && prefix !== 0x03) {
+      throw new Error('Invalid compressed public key prefix');
+    }
+    pubPoint = Point.fromX(prefix === 0x03, publicKey.subarray(1, 33));
+  } else {
+    // Uncompressed: 0x04 + x(32) + y(32)
+    if (publicKey[0] !== 0x04) {
+      throw new Error('Invalid uncompressed public key prefix');
+    }
+    const x = publicKey.subarray(1, 33);
+    const odd = (publicKey[64] & 1) === 1;
+    pubPoint = Point.fromX(odd, x);
+  }
   
   // Multiply point by private key scalar: sharedPoint = privateKey × publicKey
   const privBN = BN.fromBuffer(privateKey);

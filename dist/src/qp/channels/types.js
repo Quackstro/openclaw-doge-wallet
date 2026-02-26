@@ -23,8 +23,8 @@ export var ChannelState;
     /** Channel in dispute */
     ChannelState["DISPUTED"] = "disputed";
 })(ChannelState || (ChannelState = {}));
-/** Dust threshold — outputs below this are unspendable (1 DOGE) */
-export const DUST_THRESHOLD_KOINU = 100_000_000;
+/** Dust threshold — outputs below this are unspendable (0.01 DOGE) */
+export const DUST_THRESHOLD_KOINU = 1_000_000;
 /** Default cooperative close fee (0.01 DOGE) */
 export const DEFAULT_CLOSE_FEE_KOINU = 1_000_000;
 /** Default channel configuration */

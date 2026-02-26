@@ -80,12 +80,6 @@ export enum RetiredReason {
   MIGRATING = 3,
 }
 
-// Sideload protocol types
-export enum SideloadProtocol {
-  HTTPS = 0,
-  LIBP2P = 1,
-}
-
 // ============================================
 // Message Payloads
 // ============================================

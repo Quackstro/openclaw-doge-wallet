@@ -5,7 +5,7 @@
 
 import { randomFillSync } from 'crypto';
 import { encodeMessage } from '../messages.js';
-import { QPMessageType, QP_MAGIC, QP_VERSION, PriceUnit } from '../types.js';
+import { QPMessageType, QP_MAGIC, QP_VERSION } from '../types.js';
 import type {
   ServiceAdvertisePayload,
   RatingPayload,

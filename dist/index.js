@@ -2443,10 +2443,12 @@ const dogeWalletPlugin = {
             const req = cr(import.meta.url);
             const bc = req('bitcore-lib-doge');
             const pubkey = Buffer.from(new bc.PrivateKey(privkey).publicKey.toBuffer());
+            const privkeyCopy = Buffer.from(privkey);
+            privkey.fill(0); // Zero caller's copy
             qpClient = new QPClientClass({
                 address: address,
                 pubkey: pubkey,
-                privkey: privkey,
+                privkey: privkeyCopy,
                 provider: primaryProvider,
                 getUtxos: async () => utxoManager.getUtxos(),
                 changeAddress: address,
@@ -2467,6 +2469,8 @@ const dogeWalletPlugin = {
             const req = cr(import.meta.url);
             const bc = req('bitcore-lib-doge');
             const pubkey = Buffer.from(new bc.PrivateKey(privkey).publicKey.toBuffer());
+            const privkeyCopy = Buffer.from(privkey);
+            privkey.fill(0); // Zero caller's copy
             // Convert config skills to SkillRegistration format
             const defaultFlags = {
                 supportsDirectHtlc: true,
@@ -2492,7 +2496,7 @@ const dogeWalletPlugin = {
             qpProvider = new QPProviderClass({
                 address: address,
                 pubkey: pubkey,
-                privkey: privkey,
+                privkey: privkeyCopy,
                 provider: primaryProvider,
                 getUtxos: async () => utxoManager.getUtxos(),
                 changeAddress: address,
@@ -2556,7 +2560,7 @@ const dogeWalletPlugin = {
                         if (providers.length === 0) {
                             return `No providers found for skill 0x${skillCode.toString(16).padStart(4, '0')}.`;
                         }
-                        const lines = providers.slice(0, 10).map((p, i) => `${i + 1}. \`${p.providerAddress.slice(0, 12)}…\` — ${formatDoge(p.priceKoinu)} DOGE — ${p.description || 'no desc'}`);
+                        const lines = providers.slice(0, 10).map((p, i) => `${i + 1}. \`${p.providerAddress.slice(0, 12)}…\` — ${formatDoge(p.priceKoinu / 1e8)} DOGE — ${p.description || 'no desc'}`);
                         return `🦆 **Providers for 0x${skillCode.toString(16).padStart(4, '0')}**\n\n` +
                             lines.join('\n') +
                             (providers.length > 10 ? `\n\n_...and ${providers.length - 10} more_` : '');
@@ -2573,7 +2577,7 @@ const dogeWalletPlugin = {
                         const active = directory.getActive(status.height);
                         if (active.length === 0)
                             return "Directory is empty. Run `/qp discover <skillCode>` to scan.";
-                        const lines = active.slice(0, 15).map(l => `• 0x${l.skillCode.toString(16).padStart(4, '0')} — \`${l.providerAddress.slice(0, 12)}…\` — ${formatDoge(l.priceKoinu)} DOGE — ${l.description || '-'}`);
+                        const lines = active.slice(0, 15).map(l => `• 0x${l.skillCode.toString(16).padStart(4, '0')} — \`${l.providerAddress.slice(0, 12)}…\` — ${formatDoge(l.priceKoinu / 1e8)} DOGE — ${l.description || '-'}`);
                         return `🦆 **Service Directory** (${active.length} active)\n\n` + lines.join('\n');
                     }
                     catch (err) {
@@ -2654,7 +2658,7 @@ const dogeWalletPlugin = {
                                 text: providers.length === 0
                                     ? `No providers found for skill 0x${params.skillCode.toString(16)}.`
                                     : `Found ${providers.length} provider(s) for skill 0x${params.skillCode.toString(16)}:\n` +
-                                        providers.slice(0, 10).map((p, i) => `${i + 1}. ${p.providerAddress} — ${formatDoge(p.priceKoinu)} DOGE — ${p.description}`).join('\n'),
+                                        providers.slice(0, 10).map((p, i) => `${i + 1}. ${p.providerAddress} — ${formatDoge(p.priceKoinu / 1e8)} DOGE — ${p.description}`).join('\n'),
                             }],
                         details: {
                             skillCode: params.skillCode,
@@ -2699,7 +2703,7 @@ const dogeWalletPlugin = {
                 try {
                     // Policy check
                     const amountKoinu = Math.round(params.amountDoge * 100_000_000);
-                    const policyResult = policyEngine.evaluate(amountKoinu, params.providerAddress, params.reason);
+                    const policyResult = policyEngine.evaluate(params.amountDoge, params.providerAddress, params.reason);
                     if (!policyResult.allowed && policyResult.action !== 'auto') {
                         return {
                             content: [{ type: "text", text: `Policy blocked: ${policyResult.reason}` }],

@@ -62,10 +62,6 @@ export declare enum RetiredReason {
     COMPROMISED = 2,
     MIGRATING = 3
 }
-export declare enum SideloadProtocol {
-    HTTPS = 0,
-    LIBP2P = 1
-}
 export interface ServiceAdvertisePayload {
     skillCode: number;
     priceKoinu: number;

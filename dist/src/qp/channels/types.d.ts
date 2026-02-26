@@ -104,8 +104,8 @@ export interface ChannelConfig {
     /** Maximum concurrent channels */
     maxConcurrentChannels: number;
 }
-/** Dust threshold — outputs below this are unspendable (1 DOGE) */
-export declare const DUST_THRESHOLD_KOINU = 100000000;
+/** Dust threshold — outputs below this are unspendable (0.01 DOGE) */
+export declare const DUST_THRESHOLD_KOINU = 1000000;
 /** Default cooperative close fee (0.01 DOGE) */
 export declare const DEFAULT_CLOSE_FEE_KOINU = 1000000;
 /** Default channel configuration */

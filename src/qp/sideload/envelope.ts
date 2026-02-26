@@ -122,7 +122,10 @@ export function deserializeMessage(data: Buffer): SideloadMessage {
     delete parsed._bodyEncoding;
   }
 
-  // Strip any __proto__ or constructor keys from body if it's an object
+  // Strip prototype pollution keys from root and body
+  delete parsed.__proto__;
+  delete parsed.constructor;
+  delete parsed.prototype;
   if (typeof parsed.body === 'object' && parsed.body !== null && !Buffer.isBuffer(parsed.body)) {
     delete parsed.body.__proto__;
     delete parsed.body.constructor;
@@ -215,8 +218,10 @@ export function wireToEnvelope(wire: Buffer): EncryptedEnvelope {
  * Call this when the session is no longer needed.
  */
 export function destroySession(session: SideloadSession): void {
-  session.sessionKey.fill(0);
-  session.remoteInfo.token.fill(0);
+  if (Buffer.isBuffer(session.sessionKey)) session.sessionKey.fill(0);
+  if (session.remoteInfo?.token && Buffer.isBuffer(session.remoteInfo.token)) {
+    session.remoteInfo.token.fill(0);
+  }
 }
 
 /**

@@ -74,11 +74,6 @@ export function buildFundingTransaction(params) {
         });
     }
     // Output 0: P2SH HTLC
-    const p2shScript = Script.buildScriptHashOut(Script.fromBuffer(Buffer.concat([
-        Buffer.from([0xa9, 0x14]), // OP_HASH160 PUSH20
-        htlc.scriptHash,
-        Buffer.from([0x87]), // OP_EQUAL
-    ])));
     tx.addOutput(new Transaction.Output({
         satoshis: totalHtlcAmount,
         script: htlc.p2shAddress,

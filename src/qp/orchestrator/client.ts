@@ -518,7 +518,7 @@ export class QPClient extends EventEmitter {
     });
 
     const { wire, messageId } = sessionManager.buildRequest(
-      Buffer.isBuffer(payload) ? payload : payload,
+      Buffer.isBuffer(payload) ? payload : (typeof payload === "string" ? Buffer.from(payload) : payload),
     );
 
     // Send via transport
@@ -630,7 +630,7 @@ export class QPClient extends EventEmitter {
       type: QPMessageType.PAYMENT_COMPLETE,
       payload: {
         sessionId: params.sessionId,
-        deliveryHash: Buffer.alloc(32),  // TODO: compute from actual delivery
+        deliveryHash: params.deliveryHash ?? Buffer.alloc(32),
         skillCode: params.skillCode,
         rating: 0,                       // rated separately
         ratingFlags: { tipIncluded: false, dispute: false },
