@@ -17,6 +17,7 @@
  *   5. Provider calls transport.send(remoteInfo, wire) → POST to consumer
  *   6. transport.close(sessionId) cleans up buffers
  */
+import { type ServerOptions as TlsServerOptions } from 'https';
 import type { SideloadConnectionInfo } from './types.js';
 import type { SideloadTransport } from '../orchestrator/types.js';
 export interface HttpsTransportOptions {
@@ -28,6 +29,10 @@ export interface HttpsTransportOptions {
     maxMessageSize?: number;
     /** Request timeout in ms (default: 30000) */
     requestTimeoutMs?: number;
+    /** Maximum queued messages per session (default: 1000) */
+    maxQueueSize?: number;
+    /** TLS options (key + cert). If provided, server uses HTTPS. */
+    tls?: TlsServerOptions;
 }
 export declare class HttpsTransport implements SideloadTransport {
     private options;
@@ -38,6 +43,8 @@ export declare class HttpsTransport implements SideloadTransport {
     private maxMessageSize;
     private requestTimeoutMs;
     private destroyed;
+    private maxQueueSize;
+    private starting;
     constructor(options?: HttpsTransportOptions);
     /**
      * Start the HTTP server. Must be called before receive() works.

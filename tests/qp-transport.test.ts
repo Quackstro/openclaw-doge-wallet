@@ -388,4 +388,68 @@ describe('HttpsTransport', () => {
     assert.equal(respBody.result, 'world');
     assert.equal(respDecrypted.ref, decrypted.id);
   });
+
+  // =========================================================================
+  // Edge cases (CodeRabbit review)
+  // =========================================================================
+
+  it('registerSession throws on duplicate sessionId', async () => {
+    const transport = new HttpsTransport();
+    transports.push(transport);
+
+    const token = randomBytes(8);
+    transport.registerSession(1, token);
+    assert.throws(
+      () => transport.registerSession(1, randomBytes(8)),
+      /already registered/
+    );
+  });
+
+  it('startServer rejects after destroy', async () => {
+    const transport = new HttpsTransport();
+    transports.push(transport);
+
+    await transport.destroy();
+    await assert.rejects(
+      () => transport.startServer(),
+      /destroyed/
+    );
+  });
+
+  it('concurrent startServer calls return same port', async () => {
+    const transport = new HttpsTransport();
+    transports.push(transport);
+
+    const [p1, p2, p3] = await Promise.all([
+      transport.startServer(),
+      transport.startServer(),
+      transport.startServer(),
+    ]);
+    assert.equal(p1, p2);
+    assert.equal(p2, p3);
+  });
+
+  it('queue bounded — returns 503 when full', async () => {
+    const transport = new HttpsTransport({ maxQueueSize: 2 });
+    transports.push(transport);
+
+    const port = await transport.startServer();
+    const token = randomBytes(8);
+    transport.registerSession(1, token);
+    const info = makeConnectionInfo(1, port, token);
+
+    // Fill the queue
+    await transport.send(info, Buffer.from('msg1'));
+    await transport.send(info, Buffer.from('msg2'));
+
+    // Third should fail (503)
+    await assert.rejects(
+      () => transport.send(info, Buffer.from('msg3')),
+      /503/
+    );
+
+    // Drain and verify order
+    assert.deepEqual(await transport.receive(1, 1000), Buffer.from('msg1'));
+    assert.deepEqual(await transport.receive(1, 1000), Buffer.from('msg2'));
+  });
 });

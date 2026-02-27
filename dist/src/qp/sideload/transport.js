@@ -17,7 +17,8 @@
  *   5. Provider calls transport.send(remoteInfo, wire) → POST to consumer
  *   6. transport.close(sessionId) cleans up buffers
  */
-import { createServer } from 'http';
+import { createServer as createHttpServer } from 'http';
+import { createServer as createHttpsServer } from 'https';
 const DEFAULT_MAX_MESSAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 export class HttpsTransport {
@@ -29,11 +30,14 @@ export class HttpsTransport {
     maxMessageSize;
     requestTimeoutMs;
     destroyed = false;
+    maxQueueSize;
+    starting = null;
     constructor(options = {}) {
         this.options = options;
         this.listenHost = options.host ?? '0.0.0.0';
         this.maxMessageSize = options.maxMessageSize ?? DEFAULT_MAX_MESSAGE_SIZE;
         this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+        this.maxQueueSize = options.maxQueueSize ?? 1000;
     }
     // =========================================================================
     // Server (provider side)
@@ -43,11 +47,16 @@ export class HttpsTransport {
      * Returns the actual port (useful when port=0 for OS-assigned).
      */
     async startServer() {
-        if (this.server) {
+        this.assertNotDestroyed();
+        if (this.server)
             return this.listenPort;
-        }
-        return new Promise((resolve, reject) => {
-            const srv = createServer((req, res) => this.handleRequest(req, res));
+        if (this.starting)
+            return this.starting;
+        this.starting = new Promise((resolve, reject) => {
+            const handler = (req, res) => this.handleRequest(req, res);
+            const srv = this.options.tls
+                ? createHttpsServer(this.options.tls, handler)
+                : createHttpServer(handler);
             srv.on('error', reject);
             srv.listen(this.options.port ?? 0, this.listenHost, () => {
                 const addr = srv.address();
@@ -55,9 +64,11 @@ export class HttpsTransport {
                     this.listenPort = addr.port;
                 }
                 this.server = srv;
+                this.starting = null;
                 resolve(this.listenPort);
             });
         });
+        return this.starting;
     }
     /** Get the port the server is listening on */
     get port() {
@@ -68,8 +79,9 @@ export class HttpsTransport {
      * Must be called after handshake completes with the session's token.
      */
     registerSession(sessionId, token) {
-        if (this.sessions.has(sessionId))
-            return;
+        if (this.sessions.has(sessionId)) {
+            throw new Error(`Session ${sessionId} already registered. Close it first to re-register.`);
+        }
         this.sessions.set(sessionId, {
             queue: [],
             waiters: [],
@@ -126,9 +138,15 @@ export class HttpsTransport {
                 res.end('Empty body');
                 return;
             }
-            this.enqueue(sessionId, wire);
-            res.writeHead(200, { 'Content-Type': 'text/plain' });
-            res.end('OK');
+            const accepted = this.enqueue(sessionId, wire);
+            if (accepted) {
+                res.writeHead(200, { 'Content-Type': 'text/plain' });
+                res.end('OK');
+            }
+            else {
+                res.writeHead(503, { 'Content-Type': 'text/plain' });
+                res.end('Queue full or session closed');
+            }
         });
         req.on('error', () => {
             if (!res.writableEnded) {
@@ -140,16 +158,20 @@ export class HttpsTransport {
     enqueue(sessionId, wire) {
         const session = this.sessions.get(sessionId);
         if (!session)
-            return;
+            return false;
         // If there's a waiter, deliver directly
         if (session.waiters.length > 0) {
             const waiter = session.waiters.shift();
             clearTimeout(waiter.timer);
             waiter.resolve(wire);
+            return true;
         }
-        else {
-            session.queue.push(wire);
+        // Bound the queue
+        if (session.queue.length >= this.maxQueueSize) {
+            return false;
         }
+        session.queue.push(wire);
+        return true;
     }
     // =========================================================================
     // SideloadTransport interface
@@ -160,7 +182,8 @@ export class HttpsTransport {
     async send(remoteInfo, wire) {
         this.assertNotDestroyed();
         const ip = `${remoteInfo.ipv4[0]}.${remoteInfo.ipv4[1]}.${remoteInfo.ipv4[2]}.${remoteInfo.ipv4[3]}`;
-        const url = `http://${ip}:${remoteInfo.port}/qp/sideload/${remoteInfo.sessionId}`;
+        const proto = this.options.tls ? 'https' : 'http';
+        const url = `${proto}://${ip}:${remoteInfo.port}/qp/sideload/${remoteInfo.sessionId}`;
         const tokenHex = remoteInfo.token.toString('hex');
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
