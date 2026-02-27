@@ -257,8 +257,14 @@ export class ChannelConsumerManager extends BaseChannelManager {
       throw new Error(`Max concurrent channels reached: ${CHANNEL_DEFAULTS.maxConcurrentChannels}`);
     }
 
-    // Generate channel ID
-    const channelId = randomBytes(4).readUInt32BE();
+    // Generate unique channel ID
+    let channelId: number;
+    let attempts = 0;
+    do {
+      channelId = randomBytes(4).readUInt32BE();
+      attempts++;
+      if (attempts > 10) throw new Error('Failed to generate unique channelId');
+    } while (await this.storage.loadByChannelId?.(channelId));
 
     // Create channel params
     const channelParams: ChannelParams = {
@@ -551,7 +557,8 @@ export class ChannelConsumerManager extends BaseChannelManager {
       const closeTxHex = serializeForBroadcast(closeTx);
       const closeTxId = closeTx.id;
 
-      record.state = ChannelState.CLOSED_COOPERATIVE;
+      // State updated to CLOSING — caller broadcasts and confirms
+      record.state = ChannelState.CLOSING;
       record.closeTxId = closeTxId;
       record.updatedAt = Date.now();
       await this.storage.save(record);
@@ -817,7 +824,8 @@ export class ChannelProviderManager extends BaseChannelManager {
       const closeTxHex = serializeForBroadcast(closeTx);
       const closeTxId = closeTx.id;
 
-      record.state = ChannelState.CLOSED_COOPERATIVE;
+      // State updated to CLOSING — caller broadcasts and confirms
+      record.state = ChannelState.CLOSING;
       record.closeTxId = closeTxId;
       record.updatedAt = Date.now();
       await this.storage.save(record);

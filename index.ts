@@ -3136,7 +3136,7 @@ const dogeWalletPlugin = {
         async execute(_toolCallId: string, params: { skillCode: number; maxPriceDoge?: number }) {
           try {
             const client = await ensureQPClient();
-            const maxPriceKoinu = params.maxPriceDoge
+            const maxPriceKoinu = params.maxPriceDoge != null
               ? Math.round(params.maxPriceDoge * 100_000_000)
               : undefined;
             const providers = await client.discoverProviders(params.skillCode, maxPriceKoinu);
@@ -3199,6 +3199,17 @@ const dogeWalletPlugin = {
           params: { providerAddress: string; amountDoge: number; skillCode: number; sessionId: number; rating?: number; reason: string },
         ) {
           try {
+            // Validate inputs
+            if (!params.providerAddress || typeof params.providerAddress !== 'string') {
+              return { content: [{ type: "text", text: "Invalid provider address." }] };
+            }
+            if (!params.amountDoge || params.amountDoge <= 0) {
+              return { content: [{ type: "text", text: "Amount must be positive." }] };
+            }
+            if (!Number.isFinite(params.amountDoge)) {
+              return { content: [{ type: "text", text: "Amount must be a finite number." }] };
+            }
+
             // Policy check
             const amountKoinu = Math.round(params.amountDoge * 100_000_000);
             const policyResult = policyEngine.evaluate(params.amountDoge, params.providerAddress, params.reason);
