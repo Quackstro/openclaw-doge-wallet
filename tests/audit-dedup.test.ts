@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { AuditLog } from "../src/audit.js";
+import { AuditLog } from "../dist/src/audit.js";
 
 describe("AuditLog — logReceive deduplication", () => {
   let dataDir: string;

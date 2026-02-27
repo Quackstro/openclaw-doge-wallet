@@ -69,6 +69,14 @@ const DEFAULTS: DogeWalletConfig = {
     maxFeePerKb: 200000000,
     fallbackFeePerKb: 100000000,
   },
+  qp: {
+    providerEnabled: false,
+    skills: [],
+    advertiseTtlBlocks: 10080,
+    scanIntervalMs: 60000,
+    autoRate: true,
+    defaultRating: 5,
+  },
 };
 
 /**
@@ -131,6 +139,29 @@ export function parseDogeConfig(raw: unknown): DogeWalletConfig {
   // Validate fee strategy
   if (!["low", "medium", "high"].includes(cfg.fees.strategy)) {
     throw new Error(`doge-wallet: invalid fee strategy "${cfg.fees.strategy}"`);
+  }
+
+  // Validate QP config
+  if (cfg.qp) {
+    if (Array.isArray(cfg.qp.skills)) {
+      for (const skill of cfg.qp.skills) {
+        if (!skill.skillCode || typeof skill.skillCode !== "number") {
+          throw new Error('doge-wallet: qp.skills[].skillCode is required and must be a number');
+        }
+        if (skill.priceDoge != null && (typeof skill.priceDoge !== "number" || skill.priceDoge < 0)) {
+          throw new Error('doge-wallet: qp.skills[].priceDoge must be a non-negative number');
+        }
+      }
+    }
+    if (cfg.qp.defaultRating < 1 || cfg.qp.defaultRating > 5) {
+      throw new Error(`doge-wallet: qp.defaultRating must be 1-5, got ${cfg.qp.defaultRating}`);
+    }
+    if (cfg.qp.scanIntervalMs <= 0) {
+      throw new Error('doge-wallet: qp.scanIntervalMs must be positive');
+    }
+    if (cfg.qp.advertiseTtlBlocks <= 0) {
+      throw new Error('doge-wallet: qp.advertiseTtlBlocks must be positive');
+    }
   }
 
   return cfg;

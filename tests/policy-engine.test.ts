@@ -77,8 +77,14 @@ describe("PolicyEngine", () => {
     assert.equal(result.action, "delay");
   });
 
+  function makeHighLimitEngine(overrides: any = {}) {
+    const highLimits = { ...DEFAULT_POLICY.limits, hourlyMax: 50000, dailyMax: 50000 };
+    const tracker = new LimitTracker(tmpDir, highLimits);
+    return new PolicyEngine({ ...DEFAULT_POLICY, ...overrides, limits: highLimits }, tracker);
+  }
+
   it("large tier (<=10000 DOGE) owner-required", () => {
-    const engine = makeEngine();
+    const engine = makeHighLimitEngine();
     const result = engine.evaluate(5000, ADDR, "test");
     assert.equal(result.allowed, false);
     assert.equal(result.tier, "large");
@@ -103,7 +109,7 @@ describe("PolicyEngine", () => {
   });
 
   it("allowlist bypasses tier check", () => {
-    const engine = makeEngine({ allowlist: [ADDR] });
+    const engine = makeHighLimitEngine({ allowlist: [ADDR] });
     const result = engine.evaluate(5000, ADDR, "test");
     assert.equal(result.allowed, true);
     assert.equal(result.action, "auto");

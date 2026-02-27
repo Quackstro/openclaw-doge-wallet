@@ -28,9 +28,9 @@ describe("parseDogeConfig", () => {
     assert.equal(cfg.api.primary, "blockcypher");
   });
 
-  it("security.autoLockMs default is 300000", () => {
+  it("security field is not present (removed)", () => {
     const cfg = parseDogeConfig({});
-    assert.equal(cfg.security.autoLockMs, 300_000);
+    assert.equal(cfg.security, undefined);
   });
 
   it("invalid network throws", () => {
@@ -54,8 +54,30 @@ describe("parseDogeConfig", () => {
     );
   });
 
-  it("UTXO refreshIntervalSeconds default is 600", () => {
+  it("UTXO refreshIntervalSeconds default is 180", () => {
     const cfg = parseDogeConfig({});
-    assert.equal(cfg.utxo.refreshIntervalSeconds, 600);
+    assert.equal(cfg.utxo.refreshIntervalSeconds, 180);
+  });
+
+  it("QP defaults are applied", () => {
+    const cfg = parseDogeConfig({});
+    assert.ok(cfg.qp, "qp config should exist");
+    assert.equal(cfg.qp.providerEnabled, false);
+    assert.deepEqual(cfg.qp.skills, []);
+    assert.equal(cfg.qp.advertiseTtlBlocks, 10_080);
+    assert.equal(cfg.qp.scanIntervalMs, 60_000);
+    assert.equal(cfg.qp.autoRate, true);
+    assert.equal(cfg.qp.defaultRating, 5);
+  });
+
+  it("invalid qp.defaultRating throws", () => {
+    assert.throws(
+      () => parseDogeConfig({ qp: { defaultRating: 0 } }),
+      /qp.defaultRating must be 1-5/,
+    );
+    assert.throws(
+      () => parseDogeConfig({ qp: { defaultRating: 6 } }),
+      /qp.defaultRating must be 1-5/,
+    );
   });
 });
