@@ -123,6 +123,7 @@ export class HttpsTransport implements SideloadTransport {
    * Must be called after handshake completes with the session's token.
    */
   registerSession(sessionId: number, token: Buffer): void {
+    this.assertNotDestroyed();
     if (this.sessions.has(sessionId)) {
       throw new Error(`Session ${sessionId} already registered. Close it first to re-register.`);
     }

@@ -15,6 +15,7 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { execSync } from 'node:child_process';
 
 import { HttpsTransport } from '../dist/src/qp/sideload/transport.js';
 import { SessionManager } from '../dist/src/qp/sideload/session-manager.js';
@@ -451,5 +452,62 @@ describe('HttpsTransport', () => {
     // Drain and verify order
     assert.deepEqual(await transport.receive(1, 1000), Buffer.from('msg1'));
     assert.deepEqual(await transport.receive(1, 1000), Buffer.from('msg2'));
+  });
+
+  it('registerSession rejects after destroy', async () => {
+    const transport = new HttpsTransport();
+    transports.push(transport);
+    await transport.destroy();
+    assert.throws(
+      () => transport.registerSession(1, randomBytes(8)),
+      /destroyed/
+    );
+  });
+
+  // =========================================================================
+  // TLS
+  // =========================================================================
+
+  it('TLS round-trip with self-signed cert', async () => {
+    // Generate self-signed cert via openssl using temp files
+    const tmpKey = '/tmp/qp-test-key.pem';
+    const tmpCert = '/tmp/qp-test-cert.pem';
+    execSync(`openssl req -x509 -newkey rsa:2048 -keyout ${tmpKey} -out ${tmpCert} -days 1 -nodes -subj "/CN=localhost" -addext "subjectAltName=IP:127.0.0.1" 2>/dev/null`);
+    const { readFileSync, unlinkSync } = await import('node:fs');
+    const keyPem = readFileSync(tmpKey, 'utf8');
+    const certPem = readFileSync(tmpCert, 'utf8');
+    unlinkSync(tmpKey);
+    unlinkSync(tmpCert);
+
+    const transport = new HttpsTransport({
+      tls: { key: keyPem, cert: certPem },
+    });
+    transports.push(transport);
+
+    const port = await transport.startServer();
+    assert.ok(port > 0);
+    assert.ok(transport.listening);
+
+    const sessionId = 99;
+    const token = randomBytes(8);
+    transport.registerSession(sessionId, token);
+
+    const wire = randomBytes(64);
+    const info = makeConnectionInfo(sessionId, port, token);
+
+    // Override NODE_TLS_REJECT_UNAUTHORIZED for self-signed cert in test
+    const prev = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    try {
+      await transport.send(info, wire);
+      const received = await transport.receive(sessionId, 5000);
+      assert.deepEqual(received, wire);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      } else {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev;
+      }
+    }
   });
 });

@@ -79,6 +79,7 @@ export class HttpsTransport {
      * Must be called after handshake completes with the session's token.
      */
     registerSession(sessionId, token) {
+        this.assertNotDestroyed();
         if (this.sessions.has(sessionId)) {
             throw new Error(`Session ${sessionId} already registered. Close it first to re-register.`);
         }
