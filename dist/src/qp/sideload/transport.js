@@ -192,6 +192,9 @@ export class HttpsTransport {
      */
     async send(remoteInfo, wire) {
         this.assertNotDestroyed();
+        if (remoteInfo.protocol === SideloadProtocol.LIBP2P) {
+            throw new Error('HttpsTransport does not support libp2p protocol');
+        }
         const ip = `${remoteInfo.ipv4[0]}.${remoteInfo.ipv4[1]}.${remoteInfo.ipv4[2]}.${remoteInfo.ipv4[3]}`;
         const proto = remoteInfo.protocol === SideloadProtocol.HTTPS ? 'https' : 'http';
         const url = `${proto}://${ip}:${remoteInfo.port}/qp/sideload/${remoteInfo.sessionId}`;

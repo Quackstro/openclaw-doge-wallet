@@ -15,7 +15,8 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { HttpsTransport } from '../dist/src/qp/sideload/transport.js';
 import { SessionManager } from '../dist/src/qp/sideload/session-manager.js';
@@ -470,15 +471,10 @@ describe('HttpsTransport', () => {
   // =========================================================================
 
   it('TLS round-trip with self-signed cert', async () => {
-    // Generate self-signed cert via openssl using temp files
-    const tmpKey = '/tmp/qp-test-key.pem';
-    const tmpCert = '/tmp/qp-test-cert.pem';
-    execSync(`openssl req -x509 -newkey rsa:2048 -keyout ${tmpKey} -out ${tmpCert} -days 1 -nodes -subj "/CN=localhost" -addext "subjectAltName=IP:127.0.0.1" 2>/dev/null`);
-    const { readFileSync, unlinkSync } = await import('node:fs');
-    const keyPem = readFileSync(tmpKey, 'utf8');
-    const certPem = readFileSync(tmpCert, 'utf8');
-    unlinkSync(tmpKey);
-    unlinkSync(tmpCert);
+    // Load pre-generated test certificates (10-year validity)
+    const fixturesDir = join(import.meta.dirname, 'fixtures');
+    const keyPem = readFileSync(join(fixturesDir, 'test-key.pem'), 'utf8');
+    const certPem = readFileSync(join(fixturesDir, 'test-cert.pem'), 'utf8');
 
     const transport = new HttpsTransport({
       tls: { key: keyPem, cert: certPem },
