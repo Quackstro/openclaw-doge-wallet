@@ -20,7 +20,7 @@ import { execSync } from 'node:child_process';
 import { HttpsTransport } from '../dist/src/qp/sideload/transport.js';
 import { SessionManager } from '../dist/src/qp/sideload/session-manager.js';
 import { createSession } from '../dist/src/qp/sideload/envelope.js';
-import type { SideloadConnectionInfo } from '../dist/src/qp/sideload/types.js';
+import { SideloadProtocol, type SideloadConnectionInfo } from '../dist/src/qp/sideload/types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,13 +29,14 @@ import type { SideloadConnectionInfo } from '../dist/src/qp/sideload/types.js';
 function makeConnectionInfo(
   sessionId: number,
   port: number,
-  token: Buffer
+  token: Buffer,
+  protocol: number = 99, // Default to non-HTTPS for plaintext test transports
 ): SideloadConnectionInfo {
   return {
     sessionId,
     port,
     ipv4: Buffer.from([127, 0, 0, 1]),
-    protocol: 0, // HTTPS
+    protocol,
     token,
   };
 }
@@ -493,7 +494,7 @@ describe('HttpsTransport', () => {
     transport.registerSession(sessionId, token);
 
     const wire = randomBytes(64);
-    const info = makeConnectionInfo(sessionId, port, token);
+    const info = makeConnectionInfo(sessionId, port, token, SideloadProtocol.HTTPS);
 
     // Override NODE_TLS_REJECT_UNAUTHORIZED for self-signed cert in test
     const prev = process.env.NODE_TLS_REJECT_UNAUTHORIZED;

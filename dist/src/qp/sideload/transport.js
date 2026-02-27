@@ -18,7 +18,9 @@
  *   6. transport.close(sessionId) cleans up buffers
  */
 import { createServer as createHttpServer } from 'http';
+import { timingSafeEqual } from 'crypto';
 import { createServer as createHttpsServer } from 'https';
+import { SideloadProtocol } from './types.js';
 const DEFAULT_MAX_MESSAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 export class HttpsTransport {
@@ -57,7 +59,10 @@ export class HttpsTransport {
             const srv = this.options.tls
                 ? createHttpsServer(this.options.tls, handler)
                 : createHttpServer(handler);
-            srv.on('error', reject);
+            srv.on('error', (err) => {
+                this.starting = null;
+                reject(err);
+            });
             srv.listen(this.options.port ?? 0, this.listenHost, () => {
                 const addr = srv.address();
                 if (typeof addr === 'object' && addr) {
@@ -112,10 +117,12 @@ export class HttpsTransport {
             res.end('Unknown session');
             return;
         }
-        // Verify bearer token
-        const authHeader = req.headers['authorization'];
+        // Verify bearer token (timing-safe)
+        const authHeader = req.headers['authorization'] ?? '';
         const expectedAuth = `Bearer ${session.tokenHex}`;
-        if (authHeader !== expectedAuth) {
+        const authBuf = Buffer.from(authHeader);
+        const expectedBuf = Buffer.from(expectedAuth);
+        if (authBuf.length !== expectedBuf.length || !timingSafeEqual(authBuf, expectedBuf)) {
             res.writeHead(401, { 'Content-Type': 'text/plain' });
             res.end('Unauthorized');
             return;
@@ -186,7 +193,7 @@ export class HttpsTransport {
     async send(remoteInfo, wire) {
         this.assertNotDestroyed();
         const ip = `${remoteInfo.ipv4[0]}.${remoteInfo.ipv4[1]}.${remoteInfo.ipv4[2]}.${remoteInfo.ipv4[3]}`;
-        const proto = this.options.tls ? 'https' : 'http';
+        const proto = remoteInfo.protocol === SideloadProtocol.HTTPS ? 'https' : 'http';
         const url = `${proto}://${ip}:${remoteInfo.port}/qp/sideload/${remoteInfo.sessionId}`;
         const tokenHex = remoteInfo.token.toString('hex');
         const controller = new AbortController();
@@ -256,6 +263,13 @@ export class HttpsTransport {
     /** Stop the server and clean up all sessions */
     async destroy() {
         this.destroyed = true;
+        // Wait for any in-progress startServer to complete
+        if (this.starting) {
+            try {
+                await this.starting;
+            }
+            catch { /* ignore */ }
+        }
         // Close all sessions
         for (const sessionId of this.sessions.keys()) {
             await this.close(sessionId);

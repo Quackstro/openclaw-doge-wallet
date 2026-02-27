@@ -18,7 +18,7 @@
  *   6. transport.close(sessionId) cleans up buffers
  */
 import { type ServerOptions as TlsServerOptions } from 'https';
-import type { SideloadConnectionInfo } from './types.js';
+import { type SideloadConnectionInfo } from './types.js';
 import type { SideloadTransport } from '../orchestrator/types.js';
 export interface HttpsTransportOptions {
     /** Port to listen on (default: 0 = OS-assigned) */
