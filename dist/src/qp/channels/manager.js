@@ -239,6 +239,9 @@ export class ChannelConsumerManager extends BaseChannelManager {
             if (!record || !record.refundCommitment || !record.funding) {
                 throw new Error(`Channel not found or not ready: ${id}`);
             }
+            if (record.state !== ChannelState.FUNDING_PENDING) {
+                throw new Error(`Channel not in FUNDING_PENDING state: ${record.state}`);
+            }
             // Verify provider's signature on the refund commitment
             const refundTx = txFromSignedCommitment(record.refundCommitment);
             const providerSigValid = verifyCommitmentSig(refundTx, providerSig, record.params.providerPubkey, record.funding.redeemScript);
@@ -442,6 +445,9 @@ export class ChannelProviderManager extends BaseChannelManager {
             const record = await this.storage.load(id);
             if (!record || !record.funding) {
                 throw new Error(`Channel not found: ${id}`);
+            }
+            if (record.state !== ChannelState.CREATED && record.state !== ChannelState.FUNDING_PENDING) {
+                throw new Error(`Channel not in expected state for refund signing: ${record.state}`);
             }
             // Create initial/refund commitment
             const { state, tx } = createInitialCommitment(record.params, record.funding, consumerAddress, this.address);

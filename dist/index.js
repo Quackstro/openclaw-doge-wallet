@@ -2483,7 +2483,7 @@ const dogeWalletPlugin = {
             // Convert config skills to SkillRegistration format
             const defaultFlags = {
                 supportsDirectHtlc: true,
-                supportsSideloadHttps: true,
+                supportsSideloadHttps: false, // No transport implementation yet
                 supportsSideloadLibp2p: false,
                 supportsSideloadIpfs: false,
                 onlineNow: true,
@@ -2624,6 +2624,8 @@ const dogeWalletPlugin = {
                         if (!qpProvider)
                             return "Provider is not running.";
                         qpProvider.stop();
+                        qpProvider.destroy();
+                        qpProvider = null;
                         return "🦆 Provider mode **stopped**.";
                     }
                     if (provSub === "status" || !provSub) {
@@ -2723,9 +2725,13 @@ const dogeWalletPlugin = {
                     // Look up provider pubkey from directory (populated by prior discovery)
                     const directory = client.getDirectory();
                     const listings = directory.findByProvider(params.providerAddress);
-                    const providerPubkey = listings.length > 0
-                        ? listings[0].providerPubkey
-                        : Buffer.alloc(33); // fallback if not in directory
+                    if (listings.length === 0) {
+                        return {
+                            content: [{ type: "text", text: "Provider not found in directory. Run qp_discover first to populate the service directory." }],
+                            details: { error: "provider_not_found" },
+                        };
+                    }
+                    const providerPubkey = listings[0].providerPubkey;
                     const payResult = await client.pay({
                         providerAddress: params.providerAddress,
                         providerPubkey,
