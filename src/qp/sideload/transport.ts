@@ -124,6 +124,9 @@ export class HttpsTransport implements SideloadTransport {
    */
   registerSession(sessionId: number, token: Buffer): void {
     this.assertNotDestroyed();
+    if (token.length !== 8) {
+      throw new Error(`Token must be exactly 8 bytes, got ${token.length}`);
+    }
     if (this.sessions.has(sessionId)) {
       throw new Error(`Session ${sessionId} already registered. Close it first to re-register.`);
     }

@@ -80,6 +80,9 @@ export class HttpsTransport {
      */
     registerSession(sessionId, token) {
         this.assertNotDestroyed();
+        if (token.length !== 8) {
+            throw new Error(`Token must be exactly 8 bytes, got ${token.length}`);
+        }
         if (this.sessions.has(sessionId)) {
             throw new Error(`Session ${sessionId} already registered. Close it first to re-register.`);
         }
