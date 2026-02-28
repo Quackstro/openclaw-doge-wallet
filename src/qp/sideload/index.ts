@@ -25,3 +25,6 @@ export {
   SessionManager,
   reassembleChunks,
 } from './session-manager.js';
+
+// HTTPS Transport
+export { HttpsTransport, type HttpsTransportOptions } from './transport.js';
