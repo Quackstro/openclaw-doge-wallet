@@ -78,10 +78,7 @@ export function buildFundingTransaction(params) {
         });
     }
     // Output 0: P2SH HTLC
-    tx.addOutput(new Transaction.Output({
-        satoshis: totalHtlcAmount,
-        script: htlc.p2shAddress,
-    }));
+    tx.to(htlc.p2shAddress, totalHtlcAmount);
     // Output 1: OP_RETURN with HTLC_OFFER
     const opReturnData = createHtlcOfferOpReturn({
         sessionId,

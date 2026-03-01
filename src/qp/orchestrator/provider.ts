@@ -56,6 +56,7 @@ import type {
   SideloadTransport,
 } from './types.js';
 import { CallState } from './types.js';
+import { ProviderSettlement } from './htlc-settlement.js';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -423,6 +424,51 @@ export class QPProvider extends EventEmitter {
 
       // Send back via transport
       await transport.send(session.remoteInfo, responseWire);
+
+      // Initiate HTLC settlement: send offer, wait for funding, claim
+      try {
+        const settlement = new ProviderSettlement({
+          providerPubkey: this.config.pubkey,
+          providerPrivkey: this.config.privkey,
+          providerAddress: this.config.address,
+          provider: this.config.provider,
+        });
+        try {
+          const currentBlock = 0; // TODO: fetch from chain
+          const timeoutBlock = currentBlock + (this.config.advertiseTtlBlocks ?? 144);
+
+          const offer = await settlement.createAndSendOffer({
+            sessionManager: session.sessionManager,
+            transport,
+            remoteInfo: session.remoteInfo,
+            consumerPubkey: session.consumerPubkey ?? Buffer.alloc(33),
+            timeoutBlock,
+            sessionId,
+            skillCode: skillCode ?? 0,
+          });
+
+          const claim = await settlement.waitForFundingAndClaim({
+            sessionManager: session.sessionManager,
+            transport,
+            remoteInfo: session.remoteInfo,
+            htlcId: offer.htlcId,
+            offerMessageId: offer.offerMessageId,
+            timeoutMs: 300_000,
+          });
+
+          this.emitEvent(`session-${sessionId}`, 'payment_claimed', CallState.COMPLETE, {
+            htlcId: offer.htlcId,
+            claimTxId: claim.claimTxId,
+          });
+        } finally {
+          settlement.destroy();
+        }
+      } catch (settlementErr) {
+        // Settlement failure is non-fatal — delivery was already sent
+        this.emitEvent(`session-${sessionId}`, 'settlement_error', CallState.COMPLETE, {
+          error: settlementErr instanceof Error ? settlementErr.message : String(settlementErr),
+        });
+      }
 
       this.emitEvent(`session-${sessionId}`, 'delivery_received', CallState.COMPLETE, {
         skillCode,

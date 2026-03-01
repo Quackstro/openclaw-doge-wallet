@@ -5,6 +5,7 @@
  *   discover → handshake → sideload → deliver → pay → rate
  */
 import { randomBytes, randomUUID } from 'crypto';
+import { ConsumerSettlement } from './htlc-settlement.js';
 import { EventEmitter } from 'node:events';
 import { ecdhSharedSecret, deriveHandshakeKey, deriveSessionKey, aesGcmEncrypt, aesGcmDecrypt, deriveIv, generateEphemeralKeyPair, sha256, } from '../crypto.js';
 import { encodeMessage, } from '../messages.js';
@@ -115,15 +116,48 @@ export class QPClient extends EventEmitter {
                 ? delivery.body
                 : Buffer.from(JSON.stringify(delivery.body));
             const deliveryHash = sha256(deliveryBuf);
-            const payment = await this.pay({
-                providerAddress: provider.providerAddress,
-                providerPubkey: provider.providerPubkey,
-                amountKoinu: provider.priceKoinu,
-                method,
-                sessionId: handshake.sessionId,
-                skillCode: request.skillCode,
-                deliveryHash,
-            });
+            let payment;
+            if (method === 'htlc' && transport) {
+                // HTLC atomic settlement: provider sends offer via sideload,
+                // consumer funds, provider claims to collect payment
+                const settlement = new ConsumerSettlement({
+                    consumerPubkey: this.config.pubkey,
+                    consumerPrivkey: this.config.privkey,
+                    consumerAddress: this.config.address,
+                    getUtxos: this.config.getUtxos,
+                    changeAddress: this.config.changeAddress,
+                    provider: this.config.provider,
+                });
+                try {
+                    const result = await settlement.settle({
+                        sessionManager,
+                        transport,
+                        remoteInfo: handshake.remoteInfo,
+                        providerPubkey: provider.providerPubkey,
+                        amountKoinu: provider.priceKoinu,
+                        feeKoinu: DEFAULT_FEE_KOINU,
+                        timeoutMs: request.timeoutBlocks
+                            ? request.timeoutBlocks * 60_000
+                            : 300_000,
+                    });
+                    payment = { txId: result.fundingTxId, htlcId: result.htlcId };
+                }
+                finally {
+                    settlement.destroy();
+                }
+            }
+            else {
+                // Direct payment fallback (no HTLC)
+                payment = await this.pay({
+                    providerAddress: provider.providerAddress,
+                    providerPubkey: provider.providerPubkey,
+                    amountKoinu: provider.priceKoinu,
+                    method,
+                    sessionId: handshake.sessionId,
+                    skillCode: request.skillCode,
+                    deliveryHash,
+                });
+            }
             call.paymentTxId = payment.txId;
             call.htlcId = payment.htlcId;
             this.emitEvent(callId, 'payment_sent', CallState.PAYING, {
@@ -417,11 +451,10 @@ export class QPClient extends EventEmitter {
         if (params.method === 'channel') {
             throw new Error('Channel payments not yet implemented in orchestrator');
         }
-        // For HTLC: we need the provider to send us the secret hash.
-        // In the full protocol, this happens during sideload negotiation.
-        // For now, we do a direct payment (no HTLC) since we already have delivery.
-        //
         // Direct payment: simple DOGE tx to provider address with OP_RETURN metadata.
+        // HTLC atomic settlement is handled by ConsumerSettlement during callService
+        // when a sideload session is active. This direct-pay path is the fallback
+        // for standalone pay() calls (e.g., from the qp_pay AI tool).
         const utxos = await this.config.getUtxos();
         const totalInput = utxos.reduce((sum, u) => sum + u.amount, 0);
         const totalNeeded = params.amountKoinu + DEFAULT_FEE_KOINU;
