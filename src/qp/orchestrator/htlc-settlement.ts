@@ -30,6 +30,7 @@ import type { SideloadConnectionInfo } from '../sideload/types.js';
 // Types
 // ---------------------------------------------------------------------------
 
+/** Sideload wire message: provider → consumer HTLC offer containing the secret hash and timeout. */
 export interface HtlcOfferMessage {
   type: 'htlc_offer';
   secretHash: string;   // hex
@@ -38,6 +39,7 @@ export interface HtlcOfferMessage {
   skillCode: number;
 }
 
+/** Sideload wire message: consumer → provider confirmation that the HTLC funding tx has been broadcast. */
 export interface HtlcFundedMessage {
   type: 'htlc_funded';
   fundingTxId: string;  // hex
@@ -46,6 +48,7 @@ export interface HtlcFundedMessage {
 }
 
 export interface HtlcClaimMessage {
+/** Sideload wire message: provider → consumer claim notification revealing the secret and claim tx. */
   type: 'htlc_claim';
   secret: string;       // hex
   claimTxId: string;
@@ -56,6 +59,7 @@ export interface HtlcClaimMessage {
 // ---------------------------------------------------------------------------
 
 export interface ConsumerSettlementConfig {
+/** Configuration for the consumer side of HTLC atomic settlement. */
   consumerPubkey: Buffer;
   consumerPrivkey: Buffer;
   consumerAddress: string;
@@ -182,6 +186,7 @@ export class ConsumerSettlement {
 // Provider Settlement
 // ---------------------------------------------------------------------------
 
+/** Configuration for the provider side of HTLC atomic settlement. */
 export interface ProviderSettlementConfig {
   providerPubkey: Buffer;
   providerPrivkey: Buffer;

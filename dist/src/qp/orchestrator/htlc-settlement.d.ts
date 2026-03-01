@@ -21,6 +21,7 @@ import type { UTXO } from '../htlc/types.js';
 import type { SessionManager } from '../sideload/session-manager.js';
 import type { SideloadTransport } from './types.js';
 import type { SideloadConnectionInfo } from '../sideload/types.js';
+/** Sideload wire message: provider → consumer HTLC offer containing the secret hash and timeout. */
 export interface HtlcOfferMessage {
     type: 'htlc_offer';
     secretHash: string;
@@ -28,6 +29,7 @@ export interface HtlcOfferMessage {
     sessionId: number;
     skillCode: number;
 }
+/** Sideload wire message: consumer → provider confirmation that the HTLC funding tx has been broadcast. */
 export interface HtlcFundedMessage {
     type: 'htlc_funded';
     fundingTxId: string;
@@ -35,11 +37,13 @@ export interface HtlcFundedMessage {
     amountKoinu: number;
 }
 export interface HtlcClaimMessage {
+    /** Sideload wire message: provider → consumer claim notification revealing the secret and claim tx. */
     type: 'htlc_claim';
     secret: string;
     claimTxId: string;
 }
 export interface ConsumerSettlementConfig {
+    /** Configuration for the consumer side of HTLC atomic settlement. */
     consumerPubkey: Buffer;
     consumerPrivkey: Buffer;
     consumerAddress: string;
@@ -90,6 +94,7 @@ export declare class ConsumerSettlement {
     }>;
     destroy(): void;
 }
+/** Configuration for the provider side of HTLC atomic settlement. */
 export interface ProviderSettlementConfig {
     providerPubkey: Buffer;
     providerPrivkey: Buffer;
