@@ -417,11 +417,10 @@ export class QPClient extends EventEmitter {
         if (params.method === 'channel') {
             throw new Error('Channel payments not yet implemented in orchestrator');
         }
-        // For HTLC: we need the provider to send us the secret hash.
-        // In the full protocol, this happens during sideload negotiation.
-        // For now, we do a direct payment (no HTLC) since we already have delivery.
-        //
         // Direct payment: simple DOGE tx to provider address with OP_RETURN metadata.
+        // HTLC atomic settlement is handled by ConsumerSettlement during callService
+        // when a sideload session is active. This direct-pay path is the fallback
+        // for standalone pay() calls (e.g., from the qp_pay AI tool).
         const utxos = await this.config.getUtxos();
         const totalInput = utxos.reduce((sum, u) => sum + u.amount, 0);
         const totalNeeded = params.amountKoinu + DEFAULT_FEE_KOINU;
