@@ -5,7 +5,6 @@
   "description": "Dogecoin wallet for OpenClaw agents — much send, very crypto, wow 🐕",
   "author": "Quackstro LLC",
   "license": "MIT",
-  "kind": "service",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

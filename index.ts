@@ -1233,13 +1233,18 @@ const dogeWalletPlugin = {
     }
 
     // ------------------------------------------------------------------
-    // Callback Handler: Onboarding inline buttons
+    // Interactive Handler: Onboarding + Low Balance inline buttons
     // ------------------------------------------------------------------
-    api.registerCallbackHandler?.({
-      pattern: /^doge:onboard:/,
-      handler: async (ctx: CommandContext) => {
-        const chatId = ctx.chatId ?? ctx.chat?.id ?? "unknown";
-        const callbackData = ctx.callbackData ?? ctx.data;
+    // Uses registerInteractiveHandler with namespace "doge".
+    // All callback_data strings follow "doge:<payload>" format.
+    // The handler receives ctx.callback.payload (everything after "doge:").
+    api.registerInteractiveHandler({
+      channel: "telegram" as const,
+      namespace: "doge",
+      handler: async (ctx: any) => {
+        const payload = ctx.callback.payload; // everything after "doge:"
+        const fullData = ctx.callback.data;   // full callback_data string
+        const chatId = ctx.callback.chatId ?? ctx.conversationId ?? "unknown";
 
         // Resolve bot token for this account (multi-bot support)
         const actId = ctx.accountId;
@@ -1247,112 +1252,137 @@ const dogeWalletPlugin = {
           ? (api.config?.channels?.telegram as any)?.accounts?.[actId]?.botToken
           : undefined;
 
-        const flowResult = await onboardingFlow.handleCallback({
-          chatId,
-          callbackData,
-        });
-
-        if (!flowResult) {
-          return { text: "Unknown action." };
-        }
-
-        // SECURITY: Auto-delete the bot's mnemonic message when user confirms backup.
-        if (flowResult.deleteBotMessageId) {
-          deleteUserMessage(chatId, flowResult.deleteBotMessageId, log, tokenOverride).catch(() => {
-            log("warn", "doge-wallet: failed to auto-delete mnemonic message — user should delete manually");
+        // --- Onboarding callbacks (doge:onboard:*) ---
+        if (payload.startsWith("onboard:")) {
+          const flowResult = await onboardingFlow.handleCallback({
+            chatId,
+            callbackData: fullData,
           });
-        } else if (callbackData === "doge:onboard:phrase_saved") {
-          const btnMsgId = ctx.message?.message_id?.toString();
-          if (btnMsgId) {
-            deleteUserMessage(chatId, btnMsgId, log, tokenOverride).catch(() => {
+
+          if (!flowResult) {
+            await ctx.respond.editMessage({ text: "Unknown action." });
+            return { handled: true };
+          }
+
+          // SECURITY: Auto-delete the bot's mnemonic message when user confirms backup.
+          if (flowResult.deleteBotMessageId) {
+            deleteUserMessage(chatId, flowResult.deleteBotMessageId, log, tokenOverride).catch(() => {
               log("warn", "doge-wallet: failed to auto-delete mnemonic message — user should delete manually");
             });
+          } else if (fullData === "doge:onboard:phrase_saved") {
+            const btnMsgId = ctx.callback.messageId?.toString();
+            if (btnMsgId) {
+              deleteUserMessage(chatId, btnMsgId, log, tokenOverride).catch(() => {
+                log("warn", "doge-wallet: failed to auto-delete mnemonic message — user should delete manually");
+              });
+            }
           }
+
+          const formatted = formatOnboardingResult(flowResult);
+          const buttons = formatted.channelData?.telegram?.buttons;
+          await ctx.respond.editMessage({ text: formatted.text, buttons });
+          return { handled: true };
         }
 
-        return formatOnboardingResult(flowResult);
+        // --- Low Balance Alert callbacks (doge:lowbal:*) ---
+        if (payload.startsWith("lowbal:")) {
+          const balance = utxoManager.getBalance();
+          const totalDoge = koinuToDoge(balance.confirmed + balance.unconfirmed);
+          const threshold = cfg.notifications.lowBalanceAlert;
+
+          if (fullData === LOW_BALANCE_CALLBACKS.DISMISS) {
+            await alertState.dismiss(totalDoge, threshold);
+            await ctx.respond.editMessage({
+              text: "✅ Low balance alert dismissed.\nYou'll be notified again if your balance recovers then drops below threshold.",
+            });
+            return { handled: true };
+          }
+
+          // Handle dynamic snooze: doge:lowbal:snooze:<hours>
+          if (fullData.startsWith(LOW_BALANCE_CALLBACKS.SNOOZE + ':')) {
+            const hoursStr = fullData.split(':').pop() ?? "0";
+            const hours = parseInt(hoursStr, 10);
+            if (!isNaN(hours) && hours > 0) {
+              const durationMs = hours * 60 * 60 * 1000;
+              await alertState.snooze(durationMs, totalDoge);
+              const label = hours >= 24 ? `${Math.round(hours / 24)} day(s)` : `${hours} hour(s)`;
+              await ctx.respond.editMessage({
+                text: `💤 Low balance alert snoozed for ${label}.`,
+              });
+              return { handled: true };
+            }
+          }
+
+          await ctx.respond.editMessage({ text: "Unknown action." });
+          return { handled: true };
+        }
+
+        // --- Dashboard callback (doge:dashboard) ---
+        if (payload === "dashboard") {
+          const dashData = await buildDashboardData();
+          await ctx.respond.editMessage({ text: formatDashboard(dashData) });
+          return { handled: true };
+        }
+
+        // Unknown doge: callback
+        await ctx.respond.editMessage({ text: "Unknown action." });
+        return { handled: true };
       },
     });
 
     // ------------------------------------------------------------------
-    // Callback Handler: Low Balance Alert buttons
+    // Hook: Onboarding text input (passphrase, verification)
     // ------------------------------------------------------------------
-    api.registerCallbackHandler?.({
-      pattern: /^doge:lowbal:/,
-      handler: async (ctx: CommandContext) => {
-        const callbackData = ctx.callbackData ?? ctx.data ?? "";
+    // Uses before_dispatch hook to intercept messages during onboarding flow.
+    api.registerHook(["before_dispatch"], async (event: any, hookCtx: any) => {
+      const chatId = hookCtx.conversationId ?? hookCtx.senderId ?? "unknown";
+      const text = event.content ?? "";
 
-        // Get current balance for state tracking
-        const balance = utxoManager.getBalance();
-        const totalDoge = koinuToDoge(balance.confirmed + balance.unconfirmed);
-        const threshold = cfg.notifications.lowBalanceAlert;
+      // Check if user is in onboarding flow
+      const isOnboarding = await onboardingFlow.isOnboarding(chatId);
+      if (!isOnboarding) {
+        return; // Let normal dispatch proceed
+      }
 
-        if (callbackData === LOW_BALANCE_CALLBACKS.DISMISS) {
-          await alertState.dismiss(totalDoge, threshold);
-          return {
-            text: "✅ Low balance alert dismissed.\nYou'll be notified again if your balance recovers then drops below threshold.",
-          };
+      // Resolve bot token for this account (multi-bot support)
+      const actId = hookCtx.accountId;
+      const tokenOverride = actId
+        ? (api.config?.channels?.telegram as any)?.accounts?.[actId]?.botToken
+        : undefined;
+
+      // Handle onboarding text input
+      const flowResult = await onboardingFlow.handleMessage({
+        chatId,
+        text,
+        messageId: undefined, // Not available in hook context
+      });
+
+      if (!flowResult) {
+        return; // Let normal dispatch proceed
+      }
+
+      // SECURITY: Note about passphrase auto-delete in hook context
+      if (flowResult.deleteMessageId) {
+        log("info", "doge-wallet: onboarding handled message (passphrase auto-delete handled by flow)");
+      }
+
+      const formatted = formatOnboardingResult(flowResult);
+
+      // Send the onboarding reply via notification (hooks return text but can't send buttons inline)
+      try {
+        if (formatted.channelData?.telegram?.buttons) {
+          await sendRichNotification({
+            text: formatted.text,
+            keyboard: formatted.channelData.telegram.buttons,
+          });
+        } else {
+          await sendNotification(formatted.text, tokenOverride);
         }
+      } catch (err) {
+        log("warn", `doge-wallet: failed to send onboarding reply: ${(err as Error).message}`);
+      }
 
-        // Handle dynamic snooze: doge:lowbal:snooze:<hours>
-        if (callbackData.startsWith(LOW_BALANCE_CALLBACKS.SNOOZE + ':')) {
-          const hoursStr = callbackData.split(':').pop() ?? "0";
-          const hours = parseInt(hoursStr, 10);
-          if (!isNaN(hours) && hours > 0) {
-            const durationMs = hours * 60 * 60 * 1000;
-            await alertState.snooze(durationMs, totalDoge);
-            const label = hours >= 24 ? `${Math.round(hours / 24)} day(s)` : `${hours} hour(s)`;
-            return {
-              text: `💤 Low balance alert snoozed for ${label}.`,
-            };
-          }
-        }
-
-        return { text: "Unknown action." };
-      },
-    });
-
-    // ------------------------------------------------------------------
-    // Message Handler: Onboarding text input (passphrase, verification)
-    // ------------------------------------------------------------------
-    api.registerMessageHandler?.({
-      pattern: /./,
-      priority: 100, // High priority to intercept during onboarding
-      handler: async (ctx: CommandContext) => {
-        const chatId = ctx.chatId ?? ctx.chat?.id ?? "unknown";
-        const text = ctx.text ?? ctx.message?.text ?? "";
-        const messageId = ctx.messageId ?? ctx.message?.message_id?.toString();
-
-        // Resolve bot token for this account (multi-bot support)
-        const actId = ctx.accountId;
-        const tokenOverride = actId
-          ? (api.config?.channels?.telegram as any)?.accounts?.[actId]?.botToken
-          : undefined;
-
-        // Check if user is in onboarding flow
-        const isOnboarding = await onboardingFlow.isOnboarding(chatId);
-        if (!isOnboarding) {
-          return null;
-        }
-
-        // Handle onboarding text input
-        const flowResult = await onboardingFlow.handleMessage({
-          chatId,
-          text,
-          messageId,
-        });
-
-        if (!flowResult) {
-          return null;
-        }
-
-        // SECURITY: Delete the user's message (passphrase)
-        if (flowResult.deleteMessageId && messageId) {
-          deleteUserMessage(chatId, messageId, log, tokenOverride).catch(() => {});
-        }
-
-        return formatOnboardingResult(flowResult);
-      },
+      return { handled: true, text: formatted.text };
     });
 
     // ------------------------------------------------------------------
@@ -2858,523 +2888,6 @@ const dogeWalletPlugin = {
       { name: "wallet_verify_payment" },
     );
 
-    // ==================================================================
-    // Quackstro Protocol (QP) — Agent-to-Agent Economy
-    // ==================================================================
-
-    // Lazy-init QP client/provider (only when wallet is unlocked)
-    let qpClient: InstanceType<typeof QPClientClass> | null = null;
-    let qpProvider: InstanceType<typeof QPProviderClass> | null = null;
-
-    // Dynamic imports to avoid loading QP modules unless needed
-    let QPClientClass: typeof import('./src/qp/orchestrator/client.js').QPClient;
-    let QPProviderClass: typeof import('./src/qp/orchestrator/provider.js').QPProvider;
-    let QPCallState: typeof import('./src/qp/orchestrator/types.js').CallState;
-
-    async function loadQPModules() {
-      if (QPClientClass) return;
-      const clientMod = await import('./src/qp/orchestrator/client.js');
-      const providerMod = await import('./src/qp/orchestrator/provider.js');
-      const typesMod = await import('./src/qp/orchestrator/types.js');
-      QPClientClass = clientMod.QPClient;
-      QPProviderClass = providerMod.QPProvider;
-      QPCallState = typesMod.CallState;
-    }
-
-    async function ensureQPClient(): Promise<InstanceType<typeof QPClientClass>> {
-      const initialized = await walletManager.isInitialized();
-      if (!initialized || !walletManager.isUnlocked()) {
-        // Destroy cached instance if wallet is locked
-        if (qpClient) { qpClient.destroy(); qpClient = null; }
-        throw new Error('Wallet must be initialized and unlocked for QP operations');
-      }
-      if (qpClient) return qpClient;
-
-      await loadQPModules();
-      const address = await walletManager.getAddress();
-      const privkey = walletManager.getPrivateKey();
-      // Derive compressed public key from private key via bitcore
-      const { createRequire: cr } = await import('module');
-      const req = cr(import.meta.url);
-      const bc = req('bitcore-lib-doge');
-      const pubkey = Buffer.from(new bc.PrivateKey(privkey).publicKey.toBuffer());
-      const privkeyCopy = Buffer.from(privkey);
-      privkey.fill(0);  // Zero caller's copy
-
-      qpClient = new QPClientClass({
-        address: address!,
-        pubkey: pubkey!,
-        privkey: privkeyCopy,
-        provider,
-        getUtxos: async () => utxoManager.getUtxos(),
-        changeAddress: address!,
-      });
-
-      return qpClient;
-    }
-
-    async function ensureQPProvider(): Promise<InstanceType<typeof QPProviderClass>> {
-      const initialized = await walletManager.isInitialized();
-      if (!initialized || !walletManager.isUnlocked()) {
-        if (qpProvider) { qpProvider.destroy(); qpProvider = null; }
-        throw new Error('Wallet must be initialized and unlocked for QP provider mode');
-      }
-      if (qpProvider) return qpProvider;
-
-      await loadQPModules();
-      const address = await walletManager.getAddress();
-      const privkey = walletManager.getPrivateKey();
-      const { createRequire: cr } = await import('module');
-      const req = cr(import.meta.url);
-      const bc = req('bitcore-lib-doge');
-      const pubkey = Buffer.from(new bc.PrivateKey(privkey).publicKey.toBuffer());
-      const privkeyCopy = Buffer.from(privkey);
-      privkey.fill(0);  // Zero caller's copy
-
-      // Convert config skills to SkillRegistration format
-      const defaultFlags = {
-        supportsDirectHtlc: true,
-        supportsSideloadHttps: false,  // No transport implementation yet
-        supportsSideloadLibp2p: false,
-        supportsSideloadIpfs: false,
-        onlineNow: true,
-        supportsPaymentChannel: false,
-        acceptsPostPayment: false,
-        isCompositeTool: false,
-      };
-
-      const skills = (cfg.qp?.skills ?? []).map((s: any) => ({
-        skillCode: s.skillCode,
-        priceKoinu: Math.round(s.priceDoge * 100_000_000),
-        priceUnit: s.priceUnit ?? 0,
-        description: s.description,
-        flags: defaultFlags,
-        handler: async (request: Record<string, unknown>) => {
-          // Default handler — returns stub. Real handlers registered via hooks (future).
-          return { status: 'ok', skill: s.skillCode, message: 'Skill handler not configured' } as Record<string, unknown>;
-        },
-      }));
-
-      qpProvider = new QPProviderClass({
-        address: address!,
-        pubkey: pubkey!,
-        privkey: privkeyCopy,
-        provider,
-        getUtxos: async () => utxoManager.getUtxos(),
-        changeAddress: address!,
-        skills,
-        advertiseTtlBlocks: cfg.qp?.advertiseTtlBlocks ?? 10_080,
-        scanIntervalMs: cfg.qp?.scanIntervalMs ?? 60_000,
-      });
-
-      return qpProvider;
-    }
-
-    // ------------------------------------------------------------------
-    // Command: /qp — Quackstro Protocol hub
-    // ------------------------------------------------------------------
-    api.registerCommand({
-      name: "qp",
-      description: "🦆 Quackstro Protocol — agent-to-agent services on DOGE",
-      acceptsArgs: true,
-      handler: async (ctx: CommandContext) => {
-        const args = ctx.args?.trim() ?? "";
-        const chatId = ctx.chatId ?? ctx.chat?.id ?? ctx.senderId ?? "unknown";
-        const sub = args.split(/\s+/)[0]?.toLowerCase() ?? "";
-        const rest = args.slice(sub.length).trim();
-
-        if (!sub || sub === "help") {
-          return `🦆 **Quackstro Protocol**\n\n` +
-            `**Consumer:**\n` +
-            `\`/qp discover <skill>\` — Find providers for a skill\n` +
-            `\`/qp directory\` — List known providers\n\n` +
-            `**Provider:**\n` +
-            `\`/qp advertise\` — Broadcast skills on-chain\n` +
-            `\`/qp provider start\` — Start listening for requests\n` +
-            `\`/qp provider stop\` — Stop listening\n\n` +
-            `**General:**\n` +
-            `\`/qp status\` — Show QP status\n\n` +
-            `_Agent-to-agent economy on Dogecoin_ 🐕`;
-        }
-
-        if (sub === "status") {
-          const initialized = await walletManager.isInitialized();
-          const unlocked = walletManager.isUnlocked();
-          const clientActive = qpClient !== null;
-          const providerActive = qpProvider !== null;
-
-          let providerSessions = 0;
-          if (qpProvider) providerSessions = qpProvider.sessionCount;
-
-          let directorySize = 0;
-          if (qpClient) directorySize = qpClient.getDirectory().size;
-
-          return `🦆 **QP Status**\n\n` +
-            `Wallet: ${initialized ? (unlocked ? '🟢 Unlocked' : '🟡 Locked') : '🔴 Not init'}\n` +
-            `Client: ${clientActive ? '🟢 Active' : '⚪ Inactive'}\n` +
-            `Provider: ${providerActive ? `🟢 Active (${providerSessions} sessions)` : '⚪ Inactive'}\n` +
-            `Directory: ${directorySize} known providers`;
-        }
-
-        if (sub === "discover") {
-          if (!rest) return "Usage: `/qp discover <skillCode>` — e.g. `/qp discover 0x0403`";
-          const skillCode = parseInt(rest, rest.startsWith('0x') ? 16 : 10);
-          if (isNaN(skillCode)) return "Invalid skill code. Use hex (0x0403) or decimal.";
-
-          try {
-            const client = await ensureQPClient();
-            const providers = await client.discoverProviders(skillCode);
-
-            if (providers.length === 0) {
-              return `No providers found for skill 0x${skillCode.toString(16).padStart(4, '0')}.`;
-            }
-
-            const lines = providers.slice(0, 10).map((p, i) =>
-              `${i + 1}. \`${p.providerAddress.slice(0, 12)}…\` — ${formatDoge(p.priceKoinu / 1e8)} DOGE — ${p.description || 'no desc'}`
-            );
-
-            return `🦆 **Providers for 0x${skillCode.toString(16).padStart(4, '0')}**\n\n` +
-              lines.join('\n') +
-              (providers.length > 10 ? `\n\n_...and ${providers.length - 10} more_` : '');
-          } catch (err: unknown) {
-            return `Discovery failed: ${(err as Error).message}`;
-          }
-        }
-
-        if (sub === "directory") {
-          try {
-            const client = await ensureQPClient();
-            const status = await provider.getNetworkInfo();
-            const directory = client.getDirectory();
-            const active = directory.getActive(status.height);
-
-            if (active.length === 0) return "Directory is empty. Run `/qp discover <skillCode>` to scan.";
-
-            const lines = active.slice(0, 15).map(l =>
-              `• 0x${l.skillCode.toString(16).padStart(4, '0')} — \`${l.providerAddress.slice(0, 12)}…\` — ${formatDoge(l.priceKoinu / 1e8)} DOGE — ${l.description || '-'}`
-            );
-
-            return `🦆 **Service Directory** (${active.length} active)\n\n` + lines.join('\n');
-          } catch (err: unknown) {
-            return `Directory error: ${(err as Error).message}`;
-          }
-        }
-
-        if (sub === "advertise") {
-          try {
-            const provider = await ensureQPProvider();
-            const skills = cfg.qp?.skills ?? [];
-            if (skills.length === 0) {
-              return "No skills configured. Add skills to your plugin config under `qp.skills`.";
-            }
-            const txIds = await provider.advertise();
-            const lines = txIds.map((txid, i) =>
-              `${i + 1}. 0x${skills[i].skillCode.toString(16).padStart(4, '0')} — ${skills[i].description} — \`${txid.slice(0, 12)}…\``
-            );
-            return `🦆 **Advertised ${txIds.length} skill(s)**\n\n` + lines.join('\n');
-          } catch (err: unknown) {
-            return `Advertise failed: ${(err as Error).message}`;
-          }
-        }
-
-        if (sub === "provider") {
-          const provSub = rest.split(/\s+/)[0]?.toLowerCase() ?? "";
-
-          if (provSub === "start") {
-            try {
-              const provider = await ensureQPProvider();
-              provider.start();
-              return "🦆 Provider mode **started**. Scanning for incoming handshakes.";
-            } catch (err: unknown) {
-              return `Provider start failed: ${(err as Error).message}`;
-            }
-          }
-
-          if (provSub === "stop") {
-            if (!qpProvider) return "Provider is not running.";
-            qpProvider.stop();
-            qpProvider.destroy();
-            qpProvider = null;
-            return "🦆 Provider mode **stopped**.";
-          }
-
-          if (provSub === "status" || !provSub) {
-            const running = qpProvider !== null;
-            const sessions = qpProvider?.sessionCount ?? 0;
-            const skills = cfg.qp?.skills ?? [];
-            const skillLines = skills.map(s =>
-              `  • 0x${s.skillCode.toString(16).padStart(4, '0')} — ${s.description} — ${s.priceDoge} DOGE`
-            );
-            return `🦆 **Provider Status**\n\n` +
-              `Running: ${running ? '🟢 Yes' : '⚪ No'}\n` +
-              `Sessions: ${sessions}\n` +
-              `Skills (${skills.length}):\n` + (skillLines.length ? skillLines.join('\n') : '  (none configured)');
-          }
-
-          return `Unknown provider command. Try \`/qp provider start\` or \`/qp provider stop\`.`;
-        }
-
-        return `Unknown subcommand: \`${sub}\`. Try \`/qp help\`.`;
-      },
-    });
-
-    // ------------------------------------------------------------------
-    // Tool: qp_discover — AI-accessible service discovery
-    // ------------------------------------------------------------------
-    api.registerTool(
-      {
-        name: "qp_discover",
-        label: "QP Service Discovery",
-        description:
-          "Discover agent-to-agent service providers on the Dogecoin blockchain. " +
-          "Searches the QP registry for providers offering a specific skill code. " +
-          "Returns provider addresses, prices, and descriptions.",
-        parameters: Type.Object({
-          skillCode: Type.Number({ description: "Skill code to search for (e.g. 0x0403 = OCR)" }),
-          maxPriceDoge: Type.Optional(Type.Number({ description: "Maximum price in DOGE" })),
-        }),
-        async execute(_toolCallId: string, params: { skillCode: number; maxPriceDoge?: number }) {
-          try {
-            const client = await ensureQPClient();
-            const maxPriceKoinu = params.maxPriceDoge != null
-              ? Math.round(params.maxPriceDoge * 100_000_000)
-              : undefined;
-            const providers = await client.discoverProviders(params.skillCode, maxPriceKoinu);
-
-            return {
-              content: [{
-                type: "text",
-                text: providers.length === 0
-                  ? `No providers found for skill 0x${params.skillCode.toString(16)}.`
-                  : `Found ${providers.length} provider(s) for skill 0x${params.skillCode.toString(16)}:\n` +
-                    providers.slice(0, 10).map((p, i) =>
-                      `${i + 1}. ${p.providerAddress} — ${formatDoge(p.priceKoinu / 1e8)} DOGE — ${p.description}`
-                    ).join('\n'),
-              }],
-              details: {
-                skillCode: params.skillCode,
-                count: providers.length,
-                providers: providers.slice(0, 10).map(p => ({
-                  address: p.providerAddress,
-                  priceKoinu: p.priceKoinu,
-                  priceDoge: p.priceKoinu / 100_000_000,
-                  description: p.description,
-                  skillCode: p.skillCode,
-                  expiresAtBlock: p.expiresAtBlock,
-                })),
-              },
-            };
-          } catch (err: unknown) {
-            return {
-              content: [{ type: "text", text: `Discovery error: ${(err as Error).message}` }],
-              details: { error: (err as Error).message },
-            };
-          }
-        },
-      },
-      { name: "qp_discover" },
-    );
-
-    // ------------------------------------------------------------------
-    // Tool: qp_pay — Pay a provider for a service
-    // ------------------------------------------------------------------
-    api.registerTool(
-      {
-        name: "qp_pay",
-        label: "QP Pay Provider",
-        description:
-          "Pay a QP provider for an agent-to-agent service. " +
-          "Builds and broadcasts a payment transaction with OP_RETURN metadata. " +
-          "Also submits an on-chain rating.",
-        parameters: Type.Object({
-          providerAddress: Type.String({ description: "Provider's DOGE address" }),
-          amountDoge: Type.Number({ description: "Payment amount in DOGE" }),
-          skillCode: Type.Number({ description: "Skill code that was used" }),
-          sessionId: Type.Number({ description: "QP session ID" }),
-          rating: Type.Optional(Type.Number({ description: "Rating 1-5 (default 5)" })),
-          reason: Type.String({ description: "Why this payment is being made (audit)" }),
-        }),
-        async execute(
-          _toolCallId: string,
-          params: { providerAddress: string; amountDoge: number; skillCode: number; sessionId: number; rating?: number; reason: string },
-        ) {
-          try {
-            // Validate inputs
-            if (!params.providerAddress || typeof params.providerAddress !== 'string') {
-              return { content: [{ type: "text", text: "Invalid provider address." }] };
-            }
-            if (!params.amountDoge || params.amountDoge <= 0) {
-              return { content: [{ type: "text", text: "Amount must be positive." }] };
-            }
-            if (!Number.isFinite(params.amountDoge)) {
-              return { content: [{ type: "text", text: "Amount must be a finite number." }] };
-            }
-
-            // Policy check
-            const amountKoinu = Math.round(params.amountDoge * 100_000_000);
-            const policyResult = policyEngine.evaluate(params.amountDoge, params.providerAddress, params.reason);
-            if (!policyResult.allowed && policyResult.action !== 'auto') {
-              return {
-                content: [{ type: "text", text: `Policy blocked: ${policyResult.reason}` }],
-                details: { blocked: true, reason: policyResult.reason, tier: policyResult.tier },
-              };
-            }
-
-            const client = await ensureQPClient();
-            // Look up provider pubkey from directory (populated by prior discovery)
-            const directory = client.getDirectory();
-            const listings = directory.findByProvider(params.providerAddress);
-            if (listings.length === 0) {
-              return {
-                content: [{ type: "text", text: "Provider not found in directory. Run qp_discover first to populate the service directory." }],
-                details: { error: "provider_not_found" },
-              };
-            }
-            const providerPubkey = listings[0].providerPubkey;
-
-            const payResult = await client.pay({
-              providerAddress: params.providerAddress,
-              providerPubkey,
-              amountKoinu,
-              method: 'htlc',
-              sessionId: params.sessionId,
-              skillCode: params.skillCode,
-            });
-
-            await auditLog.logAudit({
-              action: "qp_payment",
-              address: params.providerAddress,
-              amount: amountKoinu,
-              txid: payResult.txId,
-              reason: params.reason,
-              initiatedBy: "agent",
-              metadata: { skillCode: params.skillCode, sessionId: params.sessionId },
-            });
-
-            return {
-              content: [{
-                type: "text",
-                text: `QP payment sent: ${params.amountDoge} DOGE to ${params.providerAddress}. TxID: ${payResult.txId}`,
-              }],
-              details: {
-                txId: payResult.txId,
-                amountDoge: params.amountDoge,
-                amountKoinu,
-                providerAddress: params.providerAddress,
-                skillCode: params.skillCode,
-                sessionId: params.sessionId,
-              },
-            };
-          } catch (err: unknown) {
-            return {
-              content: [{ type: "text", text: `QP payment error: ${(err as Error).message}` }],
-              details: { error: (err as Error).message },
-            };
-          }
-        },
-      },
-      { name: "qp_pay" },
-    );
-
-    // ------------------------------------------------------------------
-    // Tool: qp_status — QP protocol status for AI
-    // ------------------------------------------------------------------
-    api.registerTool(
-      {
-        name: "qp_status",
-        label: "QP Protocol Status",
-        description:
-          "Get the current status of the Quackstro Protocol system. " +
-          "Shows client/provider state, directory size, and session count.",
-        parameters: Type.Object({}),
-        async execute() {
-          const initialized = await walletManager.isInitialized();
-          const unlocked = walletManager.isUnlocked();
-
-          return {
-            content: [{
-              type: "text",
-              text: `QP Status: wallet ${initialized ? (unlocked ? 'unlocked' : 'locked') : 'not initialized'}. ` +
-                `Client: ${qpClient ? 'active' : 'inactive'}. ` +
-                `Provider: ${qpProvider ? `active (${qpProvider.sessionCount} sessions)` : 'inactive'}. ` +
-                `Directory: ${qpClient ? qpClient.getDirectory().size : 0} providers.`,
-            }],
-            details: {
-              walletInitialized: initialized,
-              walletUnlocked: unlocked,
-              clientActive: qpClient !== null,
-              providerActive: qpProvider !== null,
-              providerSessions: qpProvider?.sessionCount ?? 0,
-              directorySize: qpClient?.getDirectory().size ?? 0,
-            },
-          };
-        },
-      },
-      { name: "qp_status" },
-    );
-
-    // ------------------------------------------------------------------
-    // Tool: qp_advertise — Advertise skills on-chain
-    // ------------------------------------------------------------------
-    api.registerTool(
-      {
-        name: "qp_advertise",
-        label: "QP Advertise Skills",
-        description:
-          "Advertise this agent's skills on the Dogecoin blockchain. " +
-          "Broadcasts SERVICE_ADVERTISE transactions to QP registry addresses. " +
-          "Skills must be configured in the plugin config under qp.skills.",
-        parameters: Type.Object({}),
-        async execute() {
-          try {
-            const skills = cfg.qp?.skills ?? [];
-            if (skills.length === 0) {
-              return {
-                content: [{ type: "text", text: "No skills configured. Add skills to plugin config under qp.skills." }],
-                details: { error: "NO_SKILLS_CONFIGURED" },
-              };
-            }
-
-            const provider = await ensureQPProvider();
-            const txIds = await provider.advertise();
-
-            await auditLog.logAudit({
-              action: "qp_discovery",
-              reason: `Advertised ${txIds.length} skill(s) on-chain`,
-              initiatedBy: "agent",
-              metadata: { txIds, skills: skills.map(s => ({ skillCode: s.skillCode, description: s.description })) },
-            });
-
-            return {
-              content: [{
-                type: "text",
-                text: `Advertised ${txIds.length} skill(s) on-chain:\n` +
-                  txIds.map((txid, i) =>
-                    `${i + 1}. 0x${skills[i].skillCode.toString(16).padStart(4, '0')} (${skills[i].description}) — txid: ${txid}`
-                  ).join('\n'),
-              }],
-              details: {
-                count: txIds.length,
-                txIds,
-                skills: skills.map((s, i) => ({
-                  skillCode: s.skillCode,
-                  description: s.description,
-                  priceDoge: s.priceDoge,
-                  txId: txIds[i],
-                })),
-              },
-            };
-          } catch (err: unknown) {
-            return {
-              content: [{ type: "text", text: `Advertise error: ${(err as Error).message}` }],
-              details: { error: (err as Error).message },
-            };
-          }
-        },
-      },
-      { name: "qp_advertise" },
-    );
-
     // ------------------------------------------------------------------
     // Service: lifecycle management
     // ------------------------------------------------------------------
@@ -3469,9 +2982,6 @@ const dogeWalletPlugin = {
         );
       },
       stop: () => {
-        // QP cleanup
-        if (qpClient) { qpClient.destroy(); qpClient = null; }
-        if (qpProvider) { qpProvider.destroy(); qpProvider = null; }
         stopUtxoRefresh();
         stopApprovalExpiryCheck();
         stopInvoiceCleanup();
