@@ -163,7 +163,6 @@ const dogeWalletPlugin = {
   description:
     "Dogecoin wallet for OpenClaw agents — hold, send, receive, and manage DOGE autonomously. " +
     "Much crypto. Very agent. Wow. 🐕",
-  kind: "service" as const,
 
   register(api: any) {
     // ------------------------------------------------------------------

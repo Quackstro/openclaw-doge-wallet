@@ -208,7 +208,7 @@ Full config with defaults:
       "dailyMax": 5000,
       "hourlyMax": 1000,
       "txCountDailyMax": 50,
-      "cooldownSeconds": 30
+      "cooldownSeconds": 10
     },
     "allowlist": [],
     "denylist": []
@@ -226,8 +226,17 @@ Full config with defaults:
     "enabled": true,
     "channel": "telegram",
     "target": "YOUR_TELEGRAM_CHAT_ID",
-    "lowBalanceAlert": 100
+    "accountId": "main",
+    "lowBalanceAlert": 100,
+    "dailyLimitWarningPercent": 80
   },
+  "api": {
+    "priceApi": {
+      "provider": "coingecko",
+      "cacheTtlSeconds": 300
+    }
+  },
+  "ownerChatIds": ["YOUR_TELEGRAM_CHAT_ID"],
   "fees": {
     "strategy": "medium",
     "maxFeePerKb": 200000000,
@@ -242,11 +251,42 @@ Full config with defaults:
 
 AI agents can pay each other using the A2A invoice system:
 
-```
+```text
 Agent A creates invoice → Agent B pays to address with OP_RETURN → Agent A verifies on-chain
 ```
 
 Payments include an `OP_RETURN` output with `OC:<invoiceId>` for trustless on-chain verification.
+
+---
+
+## Quackstro Protocol (QP) — Advanced A2A Economy
+
+The plugin includes the Quackstro Protocol SDK for advanced agent-to-agent economic interactions:
+
+- **HTLC (Hash Time-Locked Contracts)** — Trustless conditional payments with timeout refunds
+- **Payment Channels** — 2-of-2 multisig channels for high-frequency micro-transactions
+- **Sideload P2P** — Encrypted off-chain messaging between agents
+- **Reputation System** — Trust scores and tiered agent reputation
+- **Registry** — Agent discovery and capability registration
+
+> ⚠️ QP is currently an SDK-level feature. Direct tool/command integration is planned for a future release.
+
+See `src/qp/README.md` and `src/qp/SPEC.md` for protocol details.
+
+---
+
+## Onboarding Flow
+
+When no wallet exists, `/wallet` triggers a guided step-by-step flow:
+
+1. Welcome screen with **Create Wallet** button
+2. Passphrase input (message auto-deleted for security)
+3. Mnemonic display (auto-deleted after confirmation)
+4. 3-word verification quiz
+5. Spending limit configuration
+6. Wallet ready!
+
+All inline buttons use the `doge:` callback namespace. During onboarding, a `before_dispatch` hook intercepts user text messages (passphrase, verification answers) to prevent sensitive input from reaching the LLM session.
 
 ---
 
@@ -335,16 +375,17 @@ If you suspect compromise:
 - [x] Agent-to-Agent invoice system with OP_RETURN verification
 - [x] UTXO management + consolidation recommendations
 - [x] Rate limiting + security hardening
+- [x] Quackstro Protocol SDK (HTLC, payment channels, sideload P2P, reputation)
 
 ### 🚧 In Progress
 
 - [ ] **Local Node Support** — Connect to your own Dogecoin Core node (pruned or full) instead of third-party APIs. Eliminates rate limits, improves privacy, and adds reliability. [See plan →](docs/PLAN-local-node-support.md)
+- [ ] **QP Tool Integration** — Expose HTLC and payment channel operations as agent tools
 
 ### 📋 Planned
 
 - [ ] **Electrum Server Support** — Lighter alternative to full node (ElectrumX/Fulcrum)
 - [ ] **Multi-Address HD Rotation** — Fresh receive address per transaction for privacy
-- [ ] **Payment Channels** — Off-chain micro-transactions for high-frequency A2A payments
 - [ ] **QR Code Generation** — Display receive address as QR in Telegram
 - [ ] **Fiat On-Ramp Integration** — Buy DOGE directly through the wallet
 - [ ] **Hardware Wallet Support** — Sign transactions with Ledger/Trezor
